@@ -5,12 +5,18 @@
 ## Chạy ứng dụng
 
 1. Cài Node.js 24 trở lên.
-2. Sao chép `.env.example` thành `.env.local` và điền Supabase URL cùng publishable key.
+2. Sao chép `.env.example` thành `.env.local` và điền Supabase URL, publishable key cùng URL gốc của ứng dụng (`APP_BASE_URL`) để luồng email xác thực/đặt lại mật khẩu quay về đúng website.
 3. Áp dụng migration trong `supabase/migrations/` vào project Supabase.
 4. Tạo tài khoản owner theo [hướng dẫn cấp quyền](docs/owner-access.md).
 5. Chạy `npm install`, `npm run dev`, rồi mở `http://localhost:3000`.
 
 Không commit `.env.local` hoặc workbook gốc. Không đưa service-role key vào website.
+
+## Bản đang triển khai
+
+Website production: <https://betea-revenue-management.vercel.app>. Tài khoản owner đã được cấp quyền. Nếu chưa đặt mật khẩu hoặc quên mật khẩu, mở trang đăng nhập và chọn **Quên hoặc chưa đặt mật khẩu?** để tự nhận email đặt lại; không gửi mật khẩu qua chat.
+
+Sổ hiện có các ngày đã ghi trong workbook từ 03/09 đến 25/09/2026. Ngày không có dòng trong workbook vẫn để trống để chủ cửa hàng bổ sung; chưa nạp COGS, mục tiêu hay chi phí tháng nên lợi nhuận chỉ đầy đủ sau khi nhập các dữ liệu đó.
 
 ## Công thức đang triển khai
 

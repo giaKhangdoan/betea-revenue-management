@@ -3,7 +3,7 @@
 Ngày: 25/09/2026  
 Chế độ: Hard  
 Risk: **high-risk** — có đăng nhập, dữ liệu tài chính, RLS, ảnh riêng tư, triển khai và sao lưu.  
-Trạng thái: Ứng dụng và các luồng chính đã dựng tại workspace. Organization Supabase riêng tên Betea đã tạo trên gói Free; project trống `Betea Revenue Management` đã được chuyển vào organization Betea và hai migration đã áp dụng. Public signup đã tắt, lời mời owner đã gửi, callback email đã có. Còn chờ owner nhận lời mời để bootstrap quyền, nạp dữ liệu Excel, tạo GitHub private repo và triển khai Vercel.
+Trạng thái: Website đã triển khai tại <https://betea-revenue-management.vercel.app>; mã nguồn ở GitHub private repo <https://github.com/giaKhangdoan/betea-revenue-management>. Organization Supabase `Betea` gói Free đang quản lý project production; hai migration đã áp dụng. Public sign-up và anonymous sign-in đã tắt; owner đã xác nhận email và có đúng một hồ sơ owner. Luồng tự đặt/đặt lại mật khẩu đã triển khai. Đã nạp và đối chiếu 23 ngày có số liệu từ Excel (03/09–25/09/2026). Lợi nhuận chưa hoàn chỉnh cho tới khi nhập các đầu vào chi phí và mục tiêu còn thiếu.
 
 ## Phạm vi và điểm xuất phát
 
@@ -50,12 +50,12 @@ ID được đặt theo thứ tự stories trong spec: US-01 dashboard tháng; U
 
 ## Việc còn chờ
 
-1. Owner nhận email mời, xác nhận tài khoản và tự đặt mật khẩu. Sau đó bootstrap đúng một dòng `owner_profiles`; không yêu cầu người dùng gửi mật khẩu.
-2. Tạo GitHub repository private và đẩy mã nguồn sau khi xác nhận workbook, `.env.local` và dữ liệu seed đều bị loại khỏi commit.
-3. Triển khai Vercel, thêm URL callback production vào Supabase Auth, xác minh owner login.
-4. Nạp 23 ngày có số liệu từ Excel và đối chiếu số dòng/tổng nguồn; không nhập COGS/P&L cũ.
-5. Hoàn thiện runbook backup/restore cho dữ liệu database và ảnh riêng tư.
-6. Giới hạn ảnh là 5 MiB/tệp; ảnh lớn được nén trên trình duyệt. Mỗi lượt có thể tải tối đa 20 ảnh; không có giới hạn số lượng tích lũy ở cấp ứng dụng.
+1. Chủ cửa hàng tự đặt mật khẩu trên trang đăng nhập production bằng liên kết **Quên hoặc chưa đặt mật khẩu?**; không chia sẻ mật khẩu qua chat.
+2. Nhập bổ sung những ngày còn thiếu nếu cần. Workbook chỉ có 23 dòng từ 03/09 đến 25/09; ngày 01–02 và 26–30 không được tự tạo thành doanh thu 0.
+3. Nhập COGS POS, tiền thuê (mặc định 10 triệu, có thể chỉnh), lương, bill nước, bill điện/chỉ số công tơ và mục tiêu tháng. Chỉ khi đủ dữ liệu theo kỳ, báo cáo lợi nhuận và độ lệch mục tiêu mới có thể coi là hoàn chỉnh.
+4. Hoàn thiện runbook backup/restore cho database và ảnh riêng tư; bản sao database không chứa đối tượng trong Storage.
+5. Giới hạn ảnh là 5 MiB/tệp; ảnh lớn được nén trên trình duyệt. Mỗi lượt có thể tải tối đa 20 ảnh; không có giới hạn số lượng tích lũy ở cấp ứng dụng.
+6. Nếu có thay đổi mã nguồn, hiện có thể triển khai production bằng Vercel CLI; kết nối GitHub auto-deploy chưa được cấu hình.
 
 Bạn đã xác nhận Grab/Shopee được cộng ngoài bốn ca; nhập các dòng có dữ liệu trong tháng 9; vệ sinh/sắp xếp xác nhận một lần mỗi ngày. Vì vậy dữ liệu Excel sẽ nạp 23 ngày có số liệu từ 03/09 đến 25/09; ngày trống 01–02 và 26–30 không tạo dòng doanh thu. Không nhập công thức P&L cũ hoặc COGS từ workbook.
 
@@ -71,7 +71,11 @@ Rủi ro lớn nhất là phân quyền RLS sai, cộng doanh thu hai lần, bi�
 - Rà soát bảo mật lần hai: signed URL hết hạn sau 5 phút; bootstrap owner thủ công; đường dẫn ảnh phải khớp owner/ngày. Storage policy ngăn xóa object còn metadata để tránh phá vỡ đối chiếu; action ghi audit trước khi dọn ảnh.
 - Đã trích và đối chiếu 23 dòng doanh thu tháng 9: bốn ca 36.262.000 ₫, Grab 665.684 ₫, Shopee 0 ₫, tổng nguồn 36.927.684 ₫. Workbook gốc và dữ liệu nhập vẫn bị loại khỏi Git.
 - Organization `Betea` gói Free đã tạo; project `Betea Revenue Management` trống đã chuyển từ `QuanLiStem` vào Betea. Đã áp dụng migration `initial_schema` và `audit_actor_index`; bucket `betea-evidence` private giới hạn 5 MiB/tệp.
-- Public signup và anonymous sign-in đã tắt; email owner đã được mời. Chờ người dùng xác nhận lời mời và tự đặt mật khẩu; chưa có owner profile.
-- Callback PKCE `/auth/callback` đã bổ sung; typecheck và lint qua. Chưa import Excel, chưa push mã nguồn hoặc deploy. Workbook và `.env.local` đang được Git ignore.
+- Dữ liệu đã nạp idempotent vào `daily_records`, xác minh 23 ngày từ 03/09 đến 25/09; các ngày ngoài khoảng vẫn thiếu. Tổng tháng được lưu: 36.927.684 ₫. Chưa nạp COGS, mục tiêu, bill điện/nước, công tơ, lương hay chi phí khác.
+- Owner đã xác nhận email; đã kiểm tra khớp đúng một dòng `owner_profiles`. `/auth/callback`, `/auth/forgot-password`, `/auth/set-password` đã triển khai; owner tự đặt mật khẩu từ liên kết trên trang đăng nhập.
+- Production đã triển khai trên Vercel; Supabase Auth Site URL và redirect allowlist chứa callback production/local cần thiết. Mã nguồn ở GitHub private; workbook và `.env.local` bị Git ignore.
+- Tùy chọn minimum password length 12 và secure password change đã bật; public sign-up, anonymous sign-in tắt, email confirmation bật. HIBP leaked-password protection hiện không có trên gói Free (Supabase Security Advisor ghi nhận một cảnh báo giới hạn gói); không nâng cấp gói khi chưa có yêu cầu.
+- Sau khi phát hiện production trả 404, đã sửa framework preset Vercel thành Next.js, tắt SSO protection của Vercel để owner không cần tài khoản Vercel, và triển khai lại. Đã kiểm tra production: `/` chuyển tới `/login`, trang đăng nhập/quên mật khẩu tải được, còn `/ledger` khi chưa đăng nhập chuyển về `/login`.
+- Chưa hoàn thành runbook backup/restore và chưa nối GitHub auto-deploy.
 
 Tài liệu tham khảo chính thức: [Next.js authentication](https://nextjs.org/docs/app/guides/authentication), [Supabase SSR cho Next.js](https://supabase.com/docs/guides/auth/server-side/nextjs), [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [Storage private buckets](https://supabase.com/docs/guides/storage/buckets/fundamentals), [Storage access control](https://supabase.com/docs/guides/storage/security/access-control), [Supabase database migrations](https://supabase.com/docs/guides/deployment/database-migrations), [Supabase backups](https://supabase.com/docs/guides/platform/backups), [Vercel environments](https://vercel.com/docs/deployments/environments).
