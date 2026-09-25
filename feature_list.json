@@ -1,0 +1,62 @@
+[
+  {
+    "id": "phase-01-nen-tang-bao-mat",
+    "title": "Nền tảng và bảo mật",
+    "status": "active",
+    "evidence": "",
+    "user_visible_behavior": "Chủ cửa hàng đăng nhập vào giao diện riêng tư, sáng, rõ ràng; tài khoản khác không xem được sổ.",
+    "verification_command": "Kiểm tra thủ công: ẩn danh bị chặn; owner đăng nhập/đăng xuất được; tài khoản khác không đọc hoặc sửa dữ liệu.",
+    "notes": "Covers stories: nền tảng bảo mật cho US-01–US-12",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-02-so-doanh-thu-chi-phi-ngay",
+    "title": "Sổ doanh thu và chi phí theo ngày",
+    "status": "active",
+    "evidence": "",
+    "user_visible_behavior": "Nhập doanh thu bốn ca, Grab/Shopee theo ngày, chi phí phát sinh và trạng thái ngày.",
+    "verification_command": "Kiểm tra thủ công: tổng ngày bằng bốn ca cộng Grab/Shopee; ngày nghỉ được tính 0 và đầy đủ; ngày còn thiếu khác 0 đồng; chi phí phát sinh cần ngày, số tiền và lý do.",
+    "notes": "Covers stories: US-03, US-04, US-08",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-03-cong-to-va-loi-nhuan",
+    "title": "Công tơ, chi phí tháng và lợi nhuận",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "Nhập COGS và chi phí tháng, ghi chỉ số điện sáng/tối, so bill với ước tính và xem lợi nhuận đúng kỳ.",
+    "verification_command": "Kiểm tra thủ công: công thức điện và phần trăm lệch (kể cả estimate bằng 0), bill thay estimate, phân bổ chi phí khớp tổng tháng và COGS chỉ trừ ở báo cáo tháng/năm.",
+    "notes": "Covers stories: US-06, US-07, US-09, US-10",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-04-anh-va-xac-nhan",
+    "title": "Ảnh Bluebook và xác nhận vận hành",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "Lưu nhiều ảnh riêng tư theo ngày/ca, xem ảnh và xác nhận vệ sinh/sắp xếp.",
+    "verification_command": "Kiểm tra thủ công: owner tải/xem/xóa ảnh được; ẩn danh và tài khoản khác bị chặn; nhãn ảnh và trạng thái checklist hiển thị đúng.",
+    "notes": "Covers stories: US-05",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-05-dashboard-va-muc-tieu",
+    "title": "Dashboard, báo cáo và mục tiêu",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "Xem tháng mặc định, lọc tuần/năm/khoảng ngày, theo dõi mục tiêu doanh thu và chênh lệch lợi nhuận tháng.",
+    "verification_command": "Kiểm tra thủ công: tuần Thứ 2–Chủ nhật; tổng kỳ khớp dòng nguồn; variance chỉ hiện khi dữ liệu đủ và mục tiêu lớn hơn 0.",
+    "notes": "Covers stories: US-01, US-02, US-11",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-06-kiem-toan-va-phat-hanh",
+    "title": "Audit, hardening và phát hành",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "Xem lịch sử sửa số liệu và dùng hệ thống đã phát hành với hướng dẫn sao lưu/khôi phục.",
+    "verification_command": "Kiểm tra thủ công: lịch sử có người sửa/thời điểm/trước-sau; preview tách production; khôi phục thử được cơ sở dữ liệu và ảnh.",
+    "notes": "Covers stories: US-12",
+    "priority": "P2"
+  }
+]
