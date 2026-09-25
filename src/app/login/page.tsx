@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { LoginForm } from "@/components/auth/login-form";
 import { getOwnerAccess } from "@/lib/auth/owner-access";
 
@@ -40,6 +41,7 @@ export default async function LoginPage({
             <div className="form-error" role="alert">Chưa thể kiểm tra quyền truy cập. Vui lòng thử lại sau.</div>
           ) : null}
           <LoginForm configured={access.status !== "unconfigured" && access.status !== "unavailable"} />
+          <Link className="auth-text-link" href="/auth/forgot-password">Quên hoặc chưa đặt mật khẩu?</Link>
         </div>
       </section>
     </main>

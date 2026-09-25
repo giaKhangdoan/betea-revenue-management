@@ -238,6 +238,7 @@ button { color: inherit; }
 .login-card > p { margin: 7px 0 24px; color: var(--muted); font-size: 14px; }
 .login-form { display: grid; gap: 16px; }
 .login-form .button { width: 100%; margin-top: 4px; }
+.auth-text-link { display: inline-block; margin-top: 16px; color: var(--accent-strong); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .login-config { border: 1px solid #ead8b4; border-radius: 8px; background: #fbf6eb; padding: 12px 14px; color: #76520d; font-size: 13px; line-height: 1.5; }
 
 @media (max-width: 880px) {

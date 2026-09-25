@@ -3,10 +3,10 @@ import { getOwnerAccess } from "@/lib/auth/owner-access";
 import { createClient } from "@/lib/supabase/server";
 
 function safeNextPath(value: string | null) {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
-    return "/";
-  }
-  return value;
+  if (!value || !value.startsWith("/")) return "/";
+  const candidate = new URL(value, "https://betea.invalid");
+  if (candidate.origin !== "https://betea.invalid") return "/";
+  return `${candidate.pathname}${candidate.search}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -28,9 +28,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?auth=failed", url.origin));
   }
 
+  const nextPath = safeNextPath(url.searchParams.get("next"));
+  if (nextPath === "/auth/set-password") {
+    return NextResponse.redirect(new URL(nextPath, url.origin));
+  }
+
   const access = await getOwnerAccess();
   if (access.status === "owner") {
-    return NextResponse.redirect(new URL(safeNextPath(url.searchParams.get("next")), url.origin));
+    return NextResponse.redirect(new URL(nextPath, url.origin));
   }
 
   return NextResponse.redirect(new URL("/setup", url.origin));
