@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type OwnerAccess =
@@ -7,7 +8,7 @@ export type OwnerAccess =
   | { status: "unavailable" }
   | { status: "owner"; email: string | null; ownerId: string };
 
-export async function getOwnerAccess(): Promise<OwnerAccess> {
+export const getOwnerAccess = cache(async (): Promise<OwnerAccess> => {
   const supabase = await createClient();
   if (!supabase) return { status: "unconfigured" };
 
@@ -30,4 +31,4 @@ export async function getOwnerAccess(): Promise<OwnerAccess> {
     ownerId: subject,
     email: typeof email === "string" ? email : null,
   };
-}
+});
