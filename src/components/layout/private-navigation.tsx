@@ -9,6 +9,7 @@ const navigationItems = [
   { href: "/costs", label: "Chi phí tháng" },
   { href: "/reports", label: "Báo cáo" },
   { href: "/audit", label: "Lịch sử" },
+  { href: "/staff-accounts", label: "Nhân viên" },
 ] as const;
 
 export function PrivateNavigation() {

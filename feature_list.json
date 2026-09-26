@@ -58,5 +58,55 @@
     "verification_command": "Kiểm tra thủ công: lịch sử có người sửa/thời điểm/trước-sau; preview tách production; khôi phục thử được cơ sở dữ liệu và ảnh.",
     "notes": "Covers stories: US-12",
     "priority": "P2"
+  },
+  {
+    "id": "phase-01-data-boundary-membership",
+    "title": "Ranh giới dữ liệu và membership",
+    "status": "passing",
+    "evidence": "Local Supabase 17.6 applied both migrations against a seeded legacy row; revenue/admin values preserved, staff current-week and write-window RLS verified, costs/admin fields and inactive memberships denied; lint/typecheck/build and 14 tests pass.",
+    "user_visible_behavior": "Tài khoản staff chỉ truy cập dữ liệu ngày an toàn trong tuần hiện tại; owner vẫn quản lý dữ liệu admin.",
+    "verification_command": "RLS check: owner đọc toàn bộ; staff chỉ đọc dữ liệu ngày hiện tại và bị chặn khỏi admin details, costs, targets, audit; migration đối chiếu giá trị trước/sau.",
+    "notes": "Covers stories: US-01, US-07, US-08",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-02-staff-account-management",
+    "title": "Quản lý tài khoản staff",
+    "status": "passing",
+    "evidence": "Focused temporary tests passed 7/7 and were removed per owner choice; final typecheck/lint/build passed, baseline suite 14/14 passed. Local Docker SQL verified current-session acceptance, old-iat/session rejection, and reset-audit request/result RPCs. Independent second review approved 9.7/10. No production migration/deploy was performed.",
+    "user_visible_behavior": "Admin tạo, cập nhật, đặt lại mật khẩu và khóa tài khoản dùng chung; staff đăng nhập vào khu vực staff.",
+    "verification_command": "Admin provisioning works; public signup remains disabled; owner/staff routes redirect by role; inactive membership blocks requests with an existing session.",
+    "notes": "Covers stories: US-01",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-03-staff-entry-workflow",
+    "title": "Nhập liệu cuối ca và khóa ngày",
+    "status": "passing",
+    "evidence": "Local Supabase reset applied all staff migrations; 18/18 pgTAP role/grant/function checks passed. SQL smoke verified per-shift writes, atomic platform +N/final counts, manual all-channel bills, meter readings, incidental expense soft delete, current-day restriction, staff photo upload, soft-deleted shift history and owner restore. Typecheck/lint/test/build passed; Phase 03 review approved with no blocking finding.",
+    "user_visible_behavior": "Staff nhập bốn ca, doanh thu và đơn Grab/Shopee, tổng bill thủ công, chỉ số điện thô và chi phí phát sinh trong ngày.",
+    "verification_command": "Each shift saves independently; atomic +N and final platform counts work; all-channel bill count is manual; past-day and post-cutoff writes are rejected; soft-deleted values retain history.",
+    "notes": "Covers stories: US-02, US-03, US-04, US-05",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-04-staff-dashboard-evidence",
+    "title": "Dashboard staff và ảnh chứng từ",
+    "status": "passing",
+    "evidence": "Staff dashboard renders current Mon–Sun rows without period totals/profit/cost; staff entry supports Bluebook/cleaning/arrangement multi-photo upload for today only, private signed URLs and owner-only deletion/checklist. Local Storage/RPC smoke passed; owner day view has visibility-aware 1-second refresh. Production evidence policies/migrations applied and production counts preserved.",
+    "user_visible_behavior": "Staff xem doanh thu từng ngày của tuần hiện tại và tải ảnh chứng từ; admin thấy ảnh và tự xác nhận checklist.",
+    "verification_command": "Staff sees current Mon-Sun day rows only with no aggregate; private multi-photo upload for allowed categories; admin sees within 5 seconds; nonmembers are denied.",
+    "notes": "Covers stories: US-06, US-07, US-08, US-09",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-05-security-rollout",
+    "title": "Audit, hardening và phát hành",
+    "status": "passing",
+    "evidence": "Production project zjevysaovkxdvwvarebv applied staff migrations through staff_policy_hardening; migration list verified. Production counts: 24 daily records, 1 owner profile, 0 staff memberships, 2 existing day photos/objects. Local clean reset passed 18/18 pgTAP checks and advisors at WARN level reported no issues; typecheck/lint/test/build passed. Intentional advisor WARNs are documented for authenticated allowlisted SECURITY DEFINER RPCs and Free-plan HIBP limitation.",
+    "user_visible_behavior": "Nhật ký phân biệt owner/staff shared-account; tính năng được bật sau khi kiểm tra quyền và rollout an toàn.",
+    "verification_command": "Role/date/API/Storage checks, owner financial regression, migration reconciliation, lint/typecheck/tests/build/advisors, and preview/production smoke all pass.",
+    "notes": "Covers stories: US-01 through US-09",
+    "priority": "P1"
   }
 ]

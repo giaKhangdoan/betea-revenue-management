@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, weekStart } from "@/lib/finance/format";
 import { calculateDailyElectricityUsage, calculateDailyRevenue } from "@/lib/finance/calculations";
+import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +21,8 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   if (!owner) redirect("/login");
   if (queryDate !== undefined && queryDate !== selectedDate) redirect(`/ledger?date=${selectedDate}`);
 
-  const { data } = await owner.supabase.from("daily_records").select("*")
-    .eq("owner_id", owner.ownerId).gte("business_date", visibleStart).lte("business_date", addDays(end, 1)).order("business_date");
-  const records = new Map((data ?? []).map((item) => [item.business_date, item]));
+  const { data } = await loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: visibleStart, end: addDays(end, 1) });
+  const records = new Map(data.map((item) => [item.business_date, item]));
   const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
   const weekDays = days.map((date) => {
     const record = records.get(date);

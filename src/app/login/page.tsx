@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LoginForm } from "@/components/auth/login-form";
-import { getOwnerAccess } from "@/lib/auth/owner-access";
+import { getAppAccess } from "@/lib/auth/app-access";
 
 export default async function LoginPage({
   searchParams,
@@ -9,9 +9,10 @@ export default async function LoginPage({
   searchParams: Promise<{ auth?: string }>;
 }) {
   const params = await searchParams;
-  const access = await getOwnerAccess();
+  const access = await getAppAccess();
   if (access.status === "owner") redirect("/");
-  if (access.status === "not-owner") redirect("/setup");
+  if (access.status === "staff") redirect("/staff/dashboard");
+  if (access.status === "not-authorized") redirect("/setup");
 
   return (
     <main className="login-page">
@@ -25,12 +26,12 @@ export default async function LoginPage({
           <h1>Rõ doanh thu. Dễ đối chiếu.</h1>
           <p>Theo dõi doanh thu theo ca, chi phí và hình ảnh chứng từ trong một nơi.</p>
         </div>
-        <p className="login-footnote">Chỉ dành cho tài khoản chủ cửa hàng được cấp quyền.</p>
+        <p className="login-footnote">Chỉ dành cho tài khoản do chủ cửa hàng cấp.</p>
       </section>
       <section className="login-panel" aria-labelledby="login-title">
         <div className="login-card">
           <h2 id="login-title">Đăng nhập Betea</h2>
-          <p>Nhập email và mật khẩu của tài khoản quản lý.</p>
+          <p>Nhập email và mật khẩu do chủ cửa hàng cấp.</p>
           {params.auth === "failed" ? (
             <div className="form-error" role="alert">Liên kết đăng nhập đã hết hạn hoặc không hợp lệ. Hãy dùng lời mời mới hoặc đăng nhập bằng mật khẩu.</div>
           ) : null}

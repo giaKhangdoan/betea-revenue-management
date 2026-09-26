@@ -3,6 +3,7 @@ import { RevenueChart, type RevenueChartItem } from "@/components/charts/revenue
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { allocateMonthlyAmountByDay, allocateSignedMonthlyAmountByDay, calculateDailyRevenue, calculateMonthlyElectricity, calculateProfitVnd, daysInMonth, hasMeterResetWithinMonth, monthKeyOf, weekRangeContaining, type MonthlyCostInput } from "@/lib/finance/calculations";
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
+import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 
 export const dynamic = "force-dynamic";
 
@@ -75,15 +76,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const queryStart = invalidRange ? "2026-09-01" : `${start.slice(0, 7)}-01`;
   const queryEnd = invalidRange ? "2026-09-01" : monthEnd(`${end.slice(0, 7)}-01`);
   const [recordsResult, costsResult, expensesResult, adjustmentsResult, monthTargetResult, weekTargetResult] = await Promise.all([
-    owner.supabase.from("daily_records").select("business_date,business_status,shift_06_10_vnd,shift_10_14_vnd,shift_14_18_vnd,shift_18_22_vnd,grab_vnd,shopee_vnd,electricity_morning_kwh,electricity_evening_kwh")
-      .eq("owner_id", owner.ownerId).gte("business_date", queryStart).lte("business_date", queryEnd).order("business_date"),
+    loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: queryStart, end: queryEnd }),
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).gte("month_start", `${queryStart.slice(0, 7)}-01`).lte("month_start", `${queryEnd.slice(0, 7)}-01`),
-    owner.supabase.from("daily_expenses").select("business_date,amount_vnd").eq("owner_id", owner.ownerId).gte("business_date", invalidRange ? queryStart : start).lte("business_date", invalidRange ? queryEnd : end),
+    owner.supabase.from("daily_expenses").select("business_date,amount_vnd").eq("owner_id", owner.ownerId).is("deleted_at", null).gte("business_date", invalidRange ? queryStart : start).lte("business_date", invalidRange ? queryEnd : end),
     owner.supabase.from("monthly_cost_adjustments").select("month_start,amount_delta_vnd").eq("owner_id", owner.ownerId).gte("month_start", `${queryStart.slice(0, 7)}-01`).lte("month_start", `${queryEnd.slice(0, 7)}-01`),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", `${start.slice(0, 7)}-01`).maybeSingle(),
     owner.supabase.from("weekly_targets").select("revenue_target_vnd").eq("owner_id", owner.ownerId).eq("week_start", weekStart(validDate(params.date) ? params.date : today)).maybeSingle(),
   ]);
-  const records = (recordsResult.data ?? []) as RecordRow[];
+  const records = recordsResult.data as RecordRow[];
   const recordMap = new Map(records.map((record) => [record.business_date, record]));
   const costMap = new Map((costsResult.data ?? []).map((cost) => [cost.month_start.slice(0, 7), cost]));
   const adjustmentMap = new Map<string, number>();

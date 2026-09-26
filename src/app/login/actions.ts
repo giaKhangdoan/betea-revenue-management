@@ -3,11 +3,12 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAppAccess } from "@/lib/auth/app-access";
 
 export type LoginState = { error?: string } | undefined;
 
 const loginSchema = z.object({
-  email: z.email({ error: "Nhập email hợp lệ." }).trim().toLowerCase(),
+  email: z.string().trim().toLowerCase().pipe(z.email({ error: "Nhập email hợp lệ." })),
   password: z.string().min(1, "Nhập mật khẩu."),
 });
 
@@ -25,5 +26,8 @@ export async function loginAction(_state: LoginState, formData: FormData): Promi
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) return { error: "Email hoặc mật khẩu chưa đúng. Vui lòng thử lại." };
 
-  redirect("/");
+  const access = await getAppAccess();
+  if (access.status === "owner") redirect("/");
+  if (access.status === "staff") redirect("/staff/dashboard");
+  redirect("/setup");
 }

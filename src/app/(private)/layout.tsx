@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { getOwnerAccess } from "@/lib/auth/owner-access";
+import { getAppAccess } from "@/lib/auth/app-access";
 import { signOutAction } from "@/app/signout/actions";
 import { PrivateNavigation } from "@/components/layout/private-navigation";
 
 export default async function PrivateLayout({ children }: Readonly<{ children: ReactNode }>) {
-  const access = await getOwnerAccess();
+  const access = await getAppAccess();
   if (access.status === "unconfigured") redirect("/login?setup=missing");
   if (access.status === "signed-out") redirect("/login");
-  if (access.status === "not-owner") redirect("/setup");
+  if (access.status === "staff") redirect("/staff/dashboard");
+  if (access.status === "not-authorized") redirect("/setup");
   if (access.status === "unavailable") redirect("/login?service=unavailable");
 
   return (

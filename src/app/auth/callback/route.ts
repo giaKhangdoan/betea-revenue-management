@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getOwnerAccess } from "@/lib/auth/owner-access";
+import { getAppAccess } from "@/lib/auth/app-access";
 import { createClient } from "@/lib/supabase/server";
 
 function safeNextPath(value: string | null) {
@@ -33,9 +33,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(nextPath, url.origin));
   }
 
-  const access = await getOwnerAccess();
+  const access = await getAppAccess();
   if (access.status === "owner") {
     return NextResponse.redirect(new URL(nextPath, url.origin));
+  }
+  if (access.status === "staff") {
+    return NextResponse.redirect(new URL("/staff/dashboard", url.origin));
   }
 
   return NextResponse.redirect(new URL("/setup", url.origin));

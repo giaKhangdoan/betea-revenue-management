@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { calculateReconciliationDifferenceVnd } from "@/lib/finance/calculations";
 import { addDays, parseVnd } from "@/lib/finance/format";
+import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 
 export type EntryActionState = { error?: string; success?: string } | undefined;
 
@@ -85,19 +86,20 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
   const monthStart = `${parsedDate.data.slice(0, 7)}-01`;
   const monthLastDay = new Date(Date.UTC(Number(parsedDate.data.slice(0, 4)), Number(parsedDate.data.slice(5, 7)), 0)).getUTCDate();
   const monthEnd = `${parsedDate.data.slice(0, 7)}-${String(monthLastDay).padStart(2, "0")}`;
-  const [previousMorningResult, previousEveningResult, monthReadingsResult] = await Promise.all([
+  const [previousMorningResult, previousEveningResult, monthRecordsResult] = await Promise.all([
     owner.supabase.from("daily_records").select("business_date,electricity_morning_kwh").eq("owner_id", owner.ownerId).lt("business_date", monthStart).not("electricity_morning_kwh", "is", null).order("business_date", { ascending: false }).limit(1),
     owner.supabase.from("daily_records").select("business_date,electricity_evening_kwh").eq("owner_id", owner.ownerId).lt("business_date", monthStart).not("electricity_evening_kwh", "is", null).order("business_date", { ascending: false }).limit(1),
-    owner.supabase.from("daily_records").select("business_date,electricity_morning_kwh,electricity_evening_kwh,electricity_reset_reason").eq("owner_id", owner.ownerId).gte("business_date", monthStart).lte("business_date", monthEnd).order("business_date"),
+    loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: monthStart, end: monthEnd }),
   ]);
-  if (previousMorningResult.error || previousEveningResult.error || monthReadingsResult.error) {
+  if (previousMorningResult.error || previousEveningResult.error || monthRecordsResult.error) {
     return { error: "Chưa kiểm tra được lịch sử công tơ. Hãy thử lưu lại sau." };
   }
   const previousPoints = [
     ...(previousMorningResult.data ?? []).map((row) => ({ date: row.business_date, slot: 0, value: Number(row.electricity_morning_kwh) })),
     ...(previousEveningResult.data ?? []).map((row) => ({ date: row.business_date, slot: 1, value: Number(row.electricity_evening_kwh) })),
   ].sort((left, right) => right.date.localeCompare(left.date) || right.slot - left.slot);
-  const currentMonthRows = (monthReadingsResult.data ?? []).filter((row) => row.business_date !== parsedDate.data);
+  const currentMonthRows: Array<Pick<typeof monthRecordsResult.data[number], "business_date" | "electricity_morning_kwh" | "electricity_evening_kwh" | "electricity_reset_reason">> = monthRecordsResult.data
+    .filter((row) => row.business_date !== parsedDate.data);
   currentMonthRows.push({
     business_date: parsedDate.data,
     electricity_morning_kwh: morningMeter,
@@ -130,22 +132,26 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
   if (!currentDateHasReset && meterResetReason) {
     return { error: "Chỉ nhập lý do khi chỉ số điện trong ngày thấp hơn lần ghi trước." };
   }
-  const { error } = await owner.supabase.from("daily_records").upsert({
-    owner_id: owner.ownerId,
-    business_date: parsedDate.data,
-    business_status: status,
-    ...values,
-    electricity_morning_kwh: morningMeter,
-    electricity_evening_kwh: eveningMeter,
-    electricity_reset_reason: currentDateHasReset ? meterResetReason : null,
-    cleaning_done: cleaningDone,
-    arrangement_done: arrangementDone,
-    note: typeof note === "string" && note.trim() ? note.trim() : null,
-    reconciliation_status: reconciliationStatus,
-    bluebook_total_vnd: isReconciled ? bluebookTotal : null,
-    reconciliation_difference_vnd: reconciliationDifference,
-    reconciliation_note: typeof reconciliationNote === "string" && reconciliationNote.trim() ? reconciliationNote.trim() : null,
-  }, { onConflict: "owner_id,business_date" });
+  const { error } = await owner.supabase.rpc("save_owner_daily_record", {
+    p_business_date: parsedDate.data,
+    p_business_status: status,
+    p_shift_06_10_vnd: values.shift_06_10_vnd,
+    p_shift_10_14_vnd: values.shift_10_14_vnd,
+    p_shift_14_18_vnd: values.shift_14_18_vnd,
+    p_shift_18_22_vnd: values.shift_18_22_vnd,
+    p_grab_vnd: values.grab_vnd,
+    p_shopee_vnd: values.shopee_vnd,
+    p_electricity_morning_kwh: morningMeter,
+    p_electricity_evening_kwh: eveningMeter,
+    p_cleaning_done: cleaningDone,
+    p_arrangement_done: arrangementDone,
+    p_note: typeof note === "string" && note.trim() ? note.trim() : null,
+    p_reconciliation_status: reconciliationStatus,
+    p_bluebook_total_vnd: isReconciled ? bluebookTotal : null,
+    p_reconciliation_difference_vnd: reconciliationDifference,
+    p_reconciliation_note: typeof reconciliationNote === "string" && reconciliationNote.trim() ? reconciliationNote.trim() : null,
+    p_electricity_reset_reason: currentDateHasReset ? meterResetReason : null,
+  });
 
   if (error) return { error: "Chưa lưu được ngày này. Hãy kiểm tra kết nối rồi thử lại." };
   revalidatePath("/");
@@ -169,17 +175,10 @@ export async function addDailyExpense(_state: EntryActionState, formData: FormDa
 
   const owner = await requireOwnerClient();
   if (!owner) return { error: "Phiên đăng nhập hết hạn hoặc tài khoản chưa được cấp quyền." };
-  const { error: dayError } = await owner.supabase.from("daily_records").upsert({
-    owner_id: owner.ownerId,
-    business_date: date.data,
-  }, { onConflict: "owner_id,business_date", ignoreDuplicates: true });
-  if (dayError) return { error: "Chưa tạo được ngày để ghi chi phí." };
-
-  const { error } = await owner.supabase.from("daily_expenses").insert({
-    owner_id: owner.ownerId,
-    business_date: date.data,
-    amount_vnd: amount,
-    reason: reason.trim(),
+  const { error } = await owner.supabase.rpc("owner_add_daily_expense", {
+    p_business_date: date.data,
+    p_amount_vnd: amount,
+    p_reason: reason.trim(),
   });
   if (error) return { error: "Chưa lưu được chi phí phát sinh. Hãy thử lại." };
   revalidatePath("/");
@@ -187,4 +186,19 @@ export async function addDailyExpense(_state: EntryActionState, formData: FormDa
   revalidatePath(`/ledger/${date.data}`);
   revalidatePath("/reports");
   return { success: "Đã thêm chi phí phát sinh." };
+}
+
+export async function restoreDeletedShift(_state: EntryActionState, formData: FormData): Promise<EntryActionState> {
+  const deletionId = z.uuid().safeParse(formData.get("deletion_id"));
+  const date = dateSchema.safeParse(formData.get("business_date"));
+  if (!deletionId.success || !date.success) return { error: "Bản ghi ca đã xóa không hợp lệ." };
+  const owner = await requireOwnerClient();
+  if (!owner) return { error: "Phiên đăng nhập hết hạn hoặc tài khoản chưa được cấp quyền." };
+  const { error } = await owner.supabase.rpc("owner_restore_shift_revenue", { p_deletion_id: deletionId.data });
+  if (error) return { error: error.message.includes("already has") ? "Ca này đã có doanh thu mới, không ghi đè để tránh mất số liệu." : "Chưa khôi phục được doanh thu ca. Hãy tải lại và thử lại." };
+  revalidatePath(`/ledger/${date.data}`);
+  revalidatePath(`/ledger?date=${date.data}`);
+  revalidatePath("/");
+  revalidatePath("/reports");
+  return { success: "Đã khôi phục doanh thu ca." };
 }

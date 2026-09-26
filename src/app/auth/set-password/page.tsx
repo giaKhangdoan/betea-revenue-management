@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { SetPasswordForm } from "@/components/auth/password-forms";
-import { getOwnerAccess } from "@/lib/auth/owner-access";
+import { getAppAccess } from "@/lib/auth/app-access";
 
 export default async function SetPasswordPage() {
-  const access = await getOwnerAccess();
-  if (access.status === "owner") {
+  const access = await getAppAccess();
+  if (access.status === "owner" || access.status === "staff") {
     return (
       <main className="login-page">
         <section className="login-story" aria-label="Đặt mật khẩu Betea">

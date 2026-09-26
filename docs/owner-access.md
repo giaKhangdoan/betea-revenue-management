@@ -34,6 +34,15 @@ Project production đã được cấu hình với đúng một owner trong `own
 
 Không đặt service-role key vào `.env.example`, GitHub, trình duyệt hoặc Vercel client variables. Ứng dụng dùng publishable key; quyền thực tế được kiểm tra qua `auth.uid()`, hồ sơ owner, RLS và Storage policies.
 
+## Cấp tài khoản nhân viên
+
+Owner tạo tài khoản tại **Tài khoản nhân viên**. Auth Admin chỉ được gọi từ Server Action bằng `SUPABASE_SERVICE_ROLE_KEY`; key không đi vào browser, log hoặc biến `NEXT_PUBLIC_*`. Nhân viên dùng đúng email/mật khẩu do owner cấp, không có luồng tự đăng ký.
+
+- Chỉ tạo một tài khoản dùng chung nếu cửa hàng muốn nhiều người nhập cùng tài khoản; audit sẽ ghi `staff` và hiển thị là tài khoản dùng chung, không nhận dạng từng người.
+- Nhân viên chỉ thấy các ngày Thứ 2–Chủ nhật của tuần hiện tại, nhập ngày hôm nay, ảnh chứng từ hôm nay và chi phí phát sinh hôm nay. Không hiển thị tổng kỳ, lợi nhuận, COGS, thuê, lương, điện nước, đối soát hoặc checklist owner.
+- Hết ngày, tắt membership sẽ chặn ngay các RPC, truy vấn và Storage path mới. Luồng khóa tài khoản đồng thời vô hiệu session hiện tại; khi mở lại phải đặt mật khẩu mới.
+- Nếu nghi ngờ mật khẩu dùng chung bị lộ, khóa membership trước, sau đó đặt mật khẩu mới và chia sẻ bằng kênh riêng. Không gửi lại mật khẩu cũ.
+
 Project production đang tắt public sign-up và anonymous sign-in, bật xác nhận email, bật secure password change và yêu cầu mật khẩu dài ít nhất 12 ký tự. Kiểm tra mật khẩu bị rò rỉ qua Have I Been Pwned cần gói Supabase Pro trở lên và hiện chưa bật trên gói Free.
 
 ## Đổi chủ tài khoản

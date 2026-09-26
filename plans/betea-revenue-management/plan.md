@@ -11,17 +11,17 @@ Lúc bắt đầu workspace chưa có codebase hoặc Git root; ứng dụng Nex
 
 ## Ngoài phạm vi MVP
 
-- Không quản lý danh sách nhân viên, ca làm/chấm công, hoặc tài khoản nhân viên tự nhập dữ liệu; chỉ chủ cửa hàng đăng nhập và nhập sổ.
+- Không quản lý chấm công, lịch ca nhân sự, tính lương theo nhân viên hoặc nhiều cửa hàng. Role staff để nhập số liệu doanh thu theo ca được đặc tả riêng tại [kế hoạch role nhân viên](../staff-roles/plan.md); đây là phần bổ sung cho MVP, không mở quyền xem chi phí/lợi nhuận.
 - Không ghi riêng tiền mặt, doanh thu trước giảm giá, giảm giá, số bill/đơn, số lượng sản phẩm, tồn kho hay nguyên liệu.
 - Không đồng bộ POS, Grab, Shopee hoặc Zalo; COGS do chủ cửa hàng chép tổng tháng từ POS.
 - Không đưa Deer Coffee hoặc số liệu Betea trước 01/09/2026 vào báo cáo quản lý riêng.
 
-Spec đã khóa theo câu trả lời của chủ cửa hàng. Yêu cầu UX được chuyển thành guardrails: giao diện sáng, một font hỗ trợ tiếng Việt, ít màu, nhãn chữ rõ, icon tối giản chỉ khi có ích, góc bo vừa phải, chuyển động ngắn, không glow/parallax. Tập trung form và báo cáo dễ thao tác trên desktop lẫn màn hình nhỏ.
+Spec quản lý thu chi đã khóa theo câu trả lời của chủ cửa hàng; role staff bổ sung được đặc tả tại kế hoạch riêng ở trên. Yêu cầu UX được chuyển thành guardrails: giao diện sáng, một font hỗ trợ tiếng Việt, ít màu, nhãn chữ rõ, icon tối giản chỉ khi có ích, góc bo vừa phải, chuyển động ngắn, không glow/parallax. Tập trung form và báo cáo dễ thao tác trên desktop lẫn màn hình nhỏ.
 
 ## Kiến trúc đề xuất
 
 - Next.js App Router, React/TypeScript, Supabase Auth, Postgres và Storage. Dùng @supabase/ssr với browser/server client tách biệt; xác minh claims tại server data-access layer và các mutation, còn proxy chỉ làm mới phiên/điều hướng nhẹ. Không cache trang dữ liệu riêng tư.
-- Tắt đăng ký công khai; chỉ cấp tài khoản chủ cửa hàng thủ công. Mỗi bảng ứng dụng có RLS, grants tối thiểu và điều kiện owner cụ thể; authenticated đơn thuần không cấp quyền dữ liệu. Không bao giờ gửi service-role key tới trình duyệt.
+- Tắt đăng ký công khai; cấp tài khoản owner và staff qua luồng server-side do admin quản lý, theo phạm vi phân quyền riêng trong kế hoạch role staff. Mỗi bảng ứng dụng có RLS, grants tối thiểu và điều kiện owner/membership cụ thể; authenticated đơn thuần không cấp quyền dữ liệu. Không bao giờ gửi service-role key tới trình duyệt.
 - Lưu migrations trong repository. Bucket ảnh private, policies theo owner, đường dẫn UUID, signed URL ngắn hạn. Nén ảnh, xác thực loại/kích thước, tải nhiều ảnh có tiến độ và retry. Database backups không bao gồm Storage objects; lập backup ảnh riêng trước production.
 - Mô hình hóa dữ liệu nguồn riêng; tổng ngày/tuần/tháng và lợi nhuận là giá trị tính từ dòng nguồn, không lưu lặp. Lưu tiền dưới dạng số nguyên VND, kWh dạng decimal, ngày nghiệp vụ theo Asia/Ho_Chi_Minh.
 

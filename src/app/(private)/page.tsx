@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { allocateMonthlyAmountByDay, allocateSignedMonthlyAmountByDay, calculateDailyRevenue, calculateMonthlyElectricity, calculateProfitVnd, hasMeterResetWithinMonth } from "@/lib/finance/calculations";
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
+import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +33,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   if (!owner) redirect("/login");
 
   const [daysResult, costResult, targetResult, expenseResult, adjustmentsResult] = await Promise.all([
-    owner.supabase.from("daily_records").select("business_date,business_status,shift_06_10_vnd,shift_10_14_vnd,shift_14_18_vnd,shift_18_22_vnd,grab_vnd,shopee_vnd,electricity_morning_kwh,electricity_evening_kwh")
-      .eq("owner_id", owner.ownerId).gte("business_date", effectiveStart).lte("business_date", asOf).order("business_date"),
+    loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: effectiveStart, end: asOf }),
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
-    owner.supabase.from("daily_expenses").select("amount_vnd").eq("owner_id", owner.ownerId).gte("business_date", effectiveStart).lte("business_date", asOf),
+    owner.supabase.from("daily_expenses").select("amount_vnd").eq("owner_id", owner.ownerId).is("deleted_at", null).gte("business_date", effectiveStart).lte("business_date", asOf),
     owner.supabase.from("monthly_cost_adjustments").select("amount_delta_vnd").eq("owner_id", owner.ownerId).eq("month_start", start),
   ]);
-  const records = (daysResult.data ?? []) as DayRow[];
+  const records = daysResult.data as DayRow[];
   const recordMap = new Map(records.map((record) => [record.business_date, record]));
   const expenses = expenseResult.data ?? [];
   const incidentalsVnd = expenses.reduce((sum, expense) => sum + Number(expense.amount_vnd), 0);

@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 const labels: Record<string, string> = {
   daily_records: "Sổ ngày",
+  store_memberships: "Tài khoản nhân viên",
+  staff_password_resets: "Đặt lại mật khẩu nhân viên",
   monthly_costs: "Chi phí tháng",
   daily_expenses: "Chi phí phát sinh",
   monthly_cost_adjustments: "Điều chỉnh chi phí tháng",
@@ -39,17 +41,27 @@ const labels: Record<string, string> = {
   amount_vnd: "Số tiền",
   amount_delta_vnd: "Mức điều chỉnh",
   reason: "Lý do",
+  event: "Thao tác",
   category: "Loại ảnh",
   shift_code: "Ca",
   caption: "Ghi chú ảnh",
   revenue_target_vnd: "Mục tiêu doanh thu",
   profit_target_vnd: "Mục tiêu lợi nhuận",
   note: "Ghi chú",
+  active: "Trạng thái tài khoản",
+};
+
+const auditEventLabels: Record<string, string> = {
+  password_reset_requested: "Yêu cầu đặt lại mật khẩu",
+  password_reset: "Đã đặt lại mật khẩu",
+  password_reset_failed: "Đặt lại mật khẩu không thành công",
 };
 
 function displayValue(field: string, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
+  if (field === "active" && typeof value === "boolean") return value ? "Đang hoạt động" : "Đã khóa";
   if (typeof value === "boolean") return value ? "Đã xác nhận" : "Chưa xác nhận";
+  if (field === "event") return auditEventLabels[String(value)] ?? String(value);
   if (field.endsWith("_vnd") && typeof value === "number") return formatVnd(value);
   if (field.endsWith("_kwh")) return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(Number(value))} kWh`;
   if (field === "business_status") return value === "closed" ? "Đã chốt" : value === "no_business" ? "Không kinh doanh" : "Đang nhập";
@@ -67,7 +79,7 @@ export default async function AuditPage() {
 
   return (
     <>
-      <div className="page-heading"><div><p className="eyebrow">LỊCH SỬ THAY ĐỔI</p><h1>Đối chiếu thao tác</h1><p>100 thay đổi gần nhất trên doanh thu, chi phí, mục tiêu và ảnh.</p></div></div>
+      <div className="page-heading"><div><p className="eyebrow">LỊCH SỬ THAY ĐỔI</p><h1>Đối chiếu thao tác</h1><p>100 thay đổi gần nhất trên doanh thu, chi phí, mục tiêu, ảnh và tài khoản.</p></div></div>
       {error ? <p className="form-error" role="alert">Chưa tải được lịch sử. Kiểm tra kết nối rồi thử lại.</p> : null}
       <section className="surface audit-list">
         {rows.length === 0 ? <p className="empty-inline">Chưa có thay đổi được ghi nhận.</p> : rows.map((row) => {
@@ -75,10 +87,16 @@ export default async function AuditPage() {
           const after = (row.after_data ?? {}) as Record<string, unknown>;
           const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((key) => !["id", "owner_id", "created_at", "updated_at"].includes(key));
           const changed = keys.filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
-          const action = row.action === "INSERT" ? "Đã thêm" : row.action === "DELETE" ? "Đã xóa" : "Đã sửa";
+          const action = row.table_name === "staff_password_resets"
+            ? auditEventLabels[String(after.event)] ?? "Thao tác mật khẩu nhân viên"
+            : row.table_name === "store_memberships" && before.active === true && after.active === false
+              ? "Đã khóa tài khoản"
+              : row.table_name === "store_memberships" && before.active === false && after.active === true
+                ? "Đã mở lại tài khoản"
+                : row.action === "INSERT" ? "Đã thêm" : row.action === "DELETE" ? "Đã xóa" : "Đã sửa";
           return <article className="audit-item" key={row.id}>
             <div className="audit-item-heading"><div><span className="status status-neutral">{action}</span><strong>{labels[row.table_name] ?? row.table_name}</strong></div><time dateTime={row.occurred_at}>{new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(row.occurred_at))}</time></div>
-            <p className="audit-actor">{row.actor_type === "system" ? "Quản trị hệ thống" : "Chủ cửa hàng"}</p>
+            <p className="audit-actor">{row.actor_type === "system" ? "Quản trị hệ thống" : row.actor_type === "staff" ? "Nhân viên (tài khoản dùng chung)" : "Chủ cửa hàng"}</p>
             {changed.length > 0 ? <dl className="audit-diff">{changed.map((field) => <div key={field}><dt>{labels[field] ?? field}</dt><dd>{before[field] === undefined ? "Mới" : displayValue(field, before[field])}<span aria-hidden="true"> → </span>{after[field] === undefined ? "Đã xóa" : displayValue(field, after[field])}</dd></div>)}</dl> : null}
           </article>;
         })}

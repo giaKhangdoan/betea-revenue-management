@@ -2,13 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getOwnerAccess } from "@/lib/auth/owner-access";
+import { getAppAccess } from "@/lib/auth/app-access";
 import { createClient } from "@/lib/supabase/server";
 
 export type PasswordActionState = { error?: string; message?: string } | undefined;
 
 const resetSchema = z.object({
-  email: z.email({ error: "Nhập email hợp lệ." }).trim().toLowerCase(),
+  email: z.string().trim().toLowerCase().pipe(z.email({ error: "Nhập email hợp lệ." })),
 });
 
 const passwordSchema = z.object({
@@ -53,8 +53,8 @@ export async function setPasswordAction(
     return { error: parsed.error.issues[0]?.message ?? "Kiểm tra lại mật khẩu." };
   }
 
-  const access = await getOwnerAccess();
-  if (access.status !== "owner") {
+  const access = await getAppAccess();
+  if (access.status !== "owner" && access.status !== "staff") {
     return { error: "Phiên đặt lại mật khẩu không hợp lệ. Hãy xin một liên kết mới." };
   }
 
@@ -64,6 +64,6 @@ export async function setPasswordAction(
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
   if (error) return { error: "Chưa thể cập nhật mật khẩu. Hãy kiểm tra liên kết và thử lại." };
 
-  redirect("/");
+  redirect(access.status === "staff" ? "/staff/dashboard" : "/");
 }
 

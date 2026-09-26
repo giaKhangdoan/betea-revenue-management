@@ -1,6 +1,6 @@
 # Sao lưu và khôi phục Betea
 
-Trạng thái: đã tạo bản sao ứng dụng trước migration ngày 26/09/2026 và xác minh giải mã/các số dòng trên chính tài khoản Windows này. Migration `daily_reconciliation_and_meter_reset` đã được áp dụng vào production ngày 26/09/2026. Kiểm tra sau migration xác nhận 23 dòng doanh thu còn nguyên, cả 23 dòng nhận trạng thái mặc định chưa đối chiếu, bảng điều chỉnh bật RLS và `anon` không có quyền đọc. Chưa khôi phục thử, chưa có bản sao độc lập khỏi máy này; chưa đủ điều kiện coi đây là bản sao lưu có thể khôi phục hoàn chỉnh.
+Trạng thái: đã tạo bản sao ứng dụng trước migration ngày 26/09/2026 và xác minh giải mã/các số dòng trên chính tài khoản Windows này. Migration `daily_reconciliation_and_meter_reset` đã được áp dụng vào production ngày 26/09/2026. Các migration role staff tiếp theo là additive và phải được dump/đối chiếu trước khi áp dụng: `staff_compatibility`, `staff_safe_read_boundary`, `staff_account_management`, `staff_session_revocation_and_reset_audit`, `staff_entry_and_evidence`, `staff_evidence_and_confirmation`. Chưa khôi phục thử, chưa có bản sao độc lập khỏi máy này; chưa đủ điều kiện coi đây là bản sao lưu có thể khôi phục hoàn chỉnh.
 
 ## Snapshot ứng dụng trước migration
 
@@ -37,6 +37,8 @@ Snapshot nằm trong thư mục bị Git bỏ qua `private-backups/`, được m
 
 6. Kiểm tra file SQL không rỗng, đếm số ảnh đã sao chép, mở thử một ảnh và lưu bản sao ở vị trí độc lập với máy đang chạy website. Ghi ngày sao lưu, người thực hiện và số dòng/ảnh đã kiểm tra vào nhật ký riêng.
 
+Trước khi bật membership staff trên production, lưu thêm số dòng của `daily_records`, `daily_expenses`, `day_photos`, `store_memberships` và số object trong `betea-evidence`. Không dùng ảnh giả trong sổ thật; nếu cần smoke upload, dùng một ngày test được owner chỉ định rồi xóa cả metadata lẫn object sau khi kiểm tra.
+
 ## Khôi phục thử
 
 Thực hiện trên một project khôi phục riêng, không ghi đè project production. Tạo project mới có thể phát sinh chi phí theo gói Supabase đang chọn; kiểm tra giá trước khi tạo.
@@ -63,6 +65,7 @@ Thực hiện trên một project khôi phục riêng, không ghi đè project p
 - Khôi phục thành công trên project tách biệt và đối chiếu số bản ghi/ảnh.
 - Xác nhận RLS, private bucket và signed URL sau khi khôi phục.
 - Chỉ áp dụng migration mới vào production sau khi các bước trên hoàn tất.
+- Sau rollout staff, kiểm tra một owner signed URL và một staff signed URL mới; vô hiệu membership staff rồi xác nhận staff không tạo được URL mới. Signed URL đã phát hành có thể tồn tại tới thời hạn tối đa 5 phút.
 
 Ghi chú lần migration hiện tại: Supabase Free không hỗ trợ database branch. Theo yêu cầu hoàn thiện và kiểm tra website bằng tài khoản chủ cửa hàng, migration bổ sung (chỉ thêm cột, constraint, bảng, RLS, trigger và index; không xóa bảng hoặc dòng hiện hữu) đã được áp dụng sau khi tạo snapshot ứng dụng. Đây chưa phải quy trình thay thế cho bản dump database/Storage và khôi phục thử; hoàn tất các bước đó trước những migration production kế tiếp.
 

@@ -6,6 +6,7 @@ import { TargetForms } from "@/components/costs/target-forms";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { calculateMonthlyElectricity, hasMeterResetWithinMonth } from "@/lib/finance/calculations";
 import { currentBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
+import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("weekly_targets").select("revenue_target_vnd").eq("owner_id", owner.ownerId).eq("week_start", selectedWeekStart).maybeSingle(),
-    owner.supabase.from("daily_records").select("business_date,electricity_morning_kwh,electricity_evening_kwh,electricity_reset_reason").eq("owner_id", owner.ownerId).gte("business_date", start).lte("business_date", end).order("business_date"),
+    loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start, end }),
     owner.supabase.from("monthly_cost_adjustments").select("id,category,amount_delta_vnd,note,created_at").eq("owner_id", owner.ownerId).eq("month_start", start).order("created_at", { ascending: false }),
   ]);
   const costs = costResult.data;
