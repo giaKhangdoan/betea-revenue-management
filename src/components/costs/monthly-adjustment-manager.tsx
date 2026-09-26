@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { addMonthlyCostAdjustment, deleteMonthlyCostAdjustment } from "@/app/costs/actions";
+import { addMonthlyCostAdjustment, deleteMonthlyCostAdjustment } from "@/app/(private)/costs/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { formatVnd } from "@/lib/finance/format";
 

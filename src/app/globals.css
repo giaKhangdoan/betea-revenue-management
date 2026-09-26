@@ -155,6 +155,8 @@ button { color: inherit; }
 .day-layout, .costs-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, .75fr); align-items: start; gap: 16px; }
 .day-primary, .day-secondary { display: grid; gap: 16px; min-width: 0; }
 .entry-form, .expense-form, .cost-form, .target-form, .photo-card, .electricity-card, .table-card, .day-note-card { padding: 20px; }
+.entry-field-group { display: grid; gap: 9px; margin-bottom: 15px; }
+.entry-field-group h3 { margin: 0; color: #33423a; font-size: 13px; font-weight: 620; }
 .entry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
 .entry-support-grid { margin-top: 16px; }
 .input-suffix { position: relative; display: block; }
@@ -191,6 +193,22 @@ button { color: inherit; }
 .reconciliation-result > strong { font-size: 18px; font-weight: 620; }
 .reconciliation-note { grid-column: 1 / -1; }
 .week-footnote { margin: 13px 1px 0; }
+.week-revenue-chart { margin-bottom: 17px; border-bottom: 1px solid var(--line); padding: 2px 0 17px; }
+.week-chart-heading { margin-bottom: 9px; }
+.week-chart-heading h2 { font-size: 14px; }
+.week-chart-heading p { margin-top: 3px; }
+.week-revenue-list { display: grid; gap: 8px; }
+.week-revenue-row { display: grid; grid-template-columns: minmax(92px, .4fr) minmax(100px, 1fr) minmax(128px, .6fr); align-items: center; gap: 12px; }
+.week-chart-date { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 11px; }
+.week-chart-date strong { font-weight: 620; }
+.week-chart-date span { color: var(--muted); }
+.week-chart-track { height: 10px; overflow: hidden; border: 1px solid #e6ebe7; background: #f4f6f4; }
+.week-chart-track span { display: block; height: 100%; min-width: 0; background: var(--accent); transition: width 160ms ease; }
+.week-chart-track .week-chart-bar-incomplete { background: #a6b6ab; }
+.week-chart-track .week-chart-bar-neutral { background: #dbe1dd; }
+.week-chart-reading { display: grid; justify-items: end; gap: 1px; text-align: right; }
+.week-chart-reading strong { overflow-wrap: anywhere; font-size: 11px; font-weight: 600; }
+.week-chart-reading span { color: var(--warning); font-size: 10px; }
 .cost-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; margin-bottom: 15px; }
 .cost-field small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .cost-field:last-child { grid-column: 1 / -1; }
@@ -228,6 +246,9 @@ button { color: inherit; }
 .field input.visually-hidden { position: fixed; width: 1px; height: 1px; min-height: 1px; margin: -1px; border: 0; padding: 0; }
 .photo-selection-summary { margin: 0; color: var(--accent-strong); font-size: 13px; font-weight: 600; }
 .photo-form > .button { justify-self: start; }
+.photo-empty-state { display: grid; gap: 4px; margin-top: 15px; border: 1px dashed #c7d3cb; background: #fbfcfb; padding: 12px; }
+.photo-empty-state strong { font-size: 12px; font-weight: 600; }
+.photo-empty-state p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 16px; }
 .photo-item { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 .photo-preview-button { display: block; width: 100%; border: 0; background: #f2f5f3; padding: 0; cursor: zoom-in; }
@@ -297,7 +318,7 @@ button { color: inherit; }
 .auth-text-link { display: inline-block; margin-top: 16px; color: var(--accent-strong); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .login-config { border: 1px solid #ead8b4; border-radius: 8px; background: #fbf6eb; padding: 12px 14px; color: #76520d; font-size: 13px; line-height: 1.5; }
 
-@media (max-width: 880px) {
+@media (max-width: 980px) {
   .app-shell { grid-template-columns: 1fr; }
   .side-rail { position: sticky; z-index: 5; top: 0; flex-direction: row; align-items: center; gap: 14px; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 16px; }
   .brand { flex: 0 0 auto; padding: 0 4px; }
@@ -340,6 +361,9 @@ button { color: inherit; }
   .week-toolbar { align-items: stretch; flex-wrap: wrap; }
   .week-toolbar > .button { flex: 1; }
   .week-toolbar .date-jump { order: 3; width: 100%; }
+  .week-revenue-row { grid-template-columns: minmax(62px, .38fr) minmax(60px, 1fr) minmax(90px, .72fr); gap: 8px; }
+  .week-chart-date { display: grid; gap: 0; }
+  .week-chart-reading strong { font-size: 10px; }
   .week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .week-day { padding: 10px; }
   .week-day-top { align-items: flex-start; }

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getOwnerAccess } from "@/lib/auth/owner-access";
 import { signOutAction } from "@/app/signout/actions";
+import { PrivateNavigation } from "@/components/layout/private-navigation";
 
 export default async function PrivateLayout({ children }: Readonly<{ children: ReactNode }>) {
   const access = await getOwnerAccess();
@@ -19,13 +20,7 @@ export default async function PrivateLayout({ children }: Readonly<{ children: R
           <span className="brand-name">betea<span className="brand-subtitle">Sổ quản lý cửa hàng</span></span>
         </Link>
         <p className="nav-label">Quản lý</p>
-        <nav className="side-nav" aria-label="Điều hướng chính">
-          <Link className="nav-link" href="/">Tổng quan</Link>
-          <Link className="nav-link" href="/ledger">Sổ ngày</Link>
-          <Link className="nav-link" href="/costs">Chi phí tháng</Link>
-          <Link className="nav-link" href="/reports">Báo cáo</Link>
-          <Link className="nav-link" href="/audit">Lịch sử</Link>
-        </nav>
+        <PrivateNavigation />
         <div className="rail-bottom">
           <p className="account-email">{access.email ?? "Tài khoản chủ cửa hàng"}</p>
           <form action={signOutAction}><button className="button button-plain" type="submit">Đăng xuất</button></form>

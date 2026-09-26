@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { parseVnd } from "@/lib/finance/format";
-import type { EntryActionState } from "@/app/ledger/actions";
+import type { EntryActionState } from "@/app/(private)/ledger/actions";
 
 const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).refine((month) => month >= "2026-09", "Sổ bắt đầu từ tháng 09/2026.");
 const adjustmentCategorySchema = z.enum(["rent", "wages", "water"]);

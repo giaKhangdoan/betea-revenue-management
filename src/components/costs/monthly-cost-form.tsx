@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { saveMonthlyCosts } from "@/app/costs/actions";
+import { saveMonthlyCosts } from "@/app/(private)/costs/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { displayVndInput } from "@/lib/finance/format";
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient as createBrowserClient } from "@/lib/supabase/browser";
-import { addDayPhotoRecord, deleteDayPhotoRecord } from "@/app/ledger/photo-actions";
+import { addDayPhotoRecord, deleteDayPhotoRecord } from "@/app/(private)/ledger/photo-actions";
 
 type Photo = {
   id: string;
@@ -299,11 +299,13 @@ export function PhotoManager({ date, initialPhotos }: { date: string; initialPho
     void processUploads([id]);
   }
 
-  function discardUnpreparedItem(id: string) {
+  function discardQueuedItem(id: string) {
     const item = uploadItemsRef.current.find((candidate) => candidate.id === id);
-    if (!item || item.status !== "failed" || item.retryable || item.objectPath || busyRef.current) return;
+    const canDiscard = item?.status === "queued" || (item?.status === "failed" && !item.retryable && !item.objectPath);
+    if (!item || !canDiscard || busyRef.current) return;
     URL.revokeObjectURL(item.previewUrl);
     replaceUploadItems(uploadItemsRef.current.filter((candidate) => candidate.id !== id));
+    setMessage("Đã bỏ ảnh khỏi danh sách. Ảnh chưa được tải lên.");
   }
 
   async function removePhoto(id: string) {
@@ -328,6 +330,7 @@ export function PhotoManager({ date, initialPhotos }: { date: string; initialPho
   }
 
   const hasRetryableItems = uploadItems.some((item) => item.status === "queued" || (item.status === "failed" && item.retryable));
+  const retryableCount = uploadItems.filter((item) => item.status === "queued" || (item.status === "failed" && item.retryable)).length;
 
   return (
     <section className="surface photo-card">
@@ -337,9 +340,9 @@ export function PhotoManager({ date, initialPhotos }: { date: string; initialPho
         <label className="field"><span>Gắn với ca (không bắt buộc)</span><select value={shiftCode} onChange={(event) => setShiftCode(event.target.value)} disabled={busy}><option value="">Cả ngày</option><option value="06-10">Ca 06:00–10:00</option><option value="10-14">Ca 10:00–14:00</option><option value="14-18">Ca 14:00–18:00</option><option value="18-22">Ca 18:00–22:00</option></select></label>
         <label className="field"><span>Ghi chú cho ảnh (không bắt buộc)</span><input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={240} placeholder="Ví dụ: ảnh bàn giao ca tối" disabled={busy} /></label>
         <div className="field"><span>Ảnh cần lưu</span><div className="photo-picker"><input className="visually-hidden" id="photo-files" ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={selectFiles} disabled={busy} aria-label="Chọn ảnh JPEG, PNG hoặc WebP" /><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()} disabled={busy}>Chọn ảnh từ thiết bị</button><span className="photo-picker-note">Có thể chọn nhiều ảnh · JPEG, PNG hoặc WebP</span></div><p className="form-note">Loại ảnh, ca và ghi chú bên trên sẽ áp dụng cho tất cả ảnh đã chọn.</p></div>
-        {uploadItems.length > 0 ? <p className="photo-selection-summary" aria-live="polite">{uploadItems.length} ảnh trong danh sách · kiểm tra ảnh bên dưới rồi chọn “Lưu {uploadItems.length} ảnh”</p> : <p className="form-note" aria-live="polite">Chưa chọn ảnh.</p>}
+        {uploadItems.length > 0 ? <p className="photo-selection-summary" aria-live="polite">{uploadItems.length} ảnh trong danh sách · xem trước từng ảnh, bỏ ảnh chọn nhầm rồi mới lưu.</p> : <p className="form-note" aria-live="polite">Chưa chọn ảnh.</p>}
         {message ? <p className={message.startsWith("Đã") ? "form-success" : "form-error"} role="status">{message}</p> : null}
-        <button className="button" type="submit" disabled={busy || !hasRetryableItems}>{busy ? "Đang lưu ảnh…" : uploadItems.length > 0 ? `Lưu ${uploadItems.length} ảnh` : "Chọn ảnh trước khi lưu"}</button>
+        <button className="button" type="submit" disabled={busy || !hasRetryableItems}>{busy ? "Đang lưu ảnh…" : retryableCount > 0 ? `Lưu ${retryableCount} ảnh` : "Chọn ảnh trước khi lưu"}</button>
       </form>
 
       {uploadItems.length > 0 ? (
@@ -351,6 +354,8 @@ export function PhotoManager({ date, initialPhotos }: { date: string; initialPho
               </button>
               <div className="photo-meta"><div>
                 <strong>{item.sourceFile.name}</strong>
+                <span>{categoryLabels[category] ?? "Ảnh"} · {shiftCode ? `Ca ${shiftCode.replace("-", ":00–")}:00` : "Cả ngày"}</span>
+                {caption.trim() ? <span>{caption.trim()}</span> : null}
                 <span role="status">{statusLabels[item.status]}</span>
                 {item.message ? <span className="form-error">{item.message}</span> : null}
                 {item.status === "preparing" || item.status === "uploading" || item.status === "saving" ? (
@@ -360,14 +365,14 @@ export function PhotoManager({ date, initialPhotos }: { date: string; initialPho
                 ) : null}
               </div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ url: item.previewUrl, title: item.sourceFile.name, detail: `${categoryLabels[category] ?? "Ảnh"}${shiftCode ? ` · Ca ${shiftCode.replace("-", ":00–")}:00` : " · Cả ngày"}${caption.trim() ? ` · ${caption.trim()}` : ""}` })}>Xem ảnh</button>
                 {item.status === "failed" && item.retryable ? <button className="text-button" type="button" onClick={() => retryOne(item.id)} disabled={busy} aria-label={`Thử lại ảnh ${item.sourceFile.name}`}>Thử lại</button> : null}
-                {item.status === "failed" && !item.retryable && !item.objectPath ? <button className="text-button" type="button" onClick={() => discardUnpreparedItem(item.id)} disabled={busy} aria-label={`Bỏ ảnh ${item.sourceFile.name} khỏi danh sách`}>Bỏ ảnh</button> : null}
+                {(item.status === "queued" || (item.status === "failed" && !item.retryable && !item.objectPath)) ? <button className="text-button" type="button" onClick={() => discardQueuedItem(item.id)} disabled={busy} aria-label={`Bỏ ảnh ${item.sourceFile.name} khỏi danh sách`}>Bỏ ảnh</button> : null}
               </div></div>
             </article>
           ))}
         </div>
       ) : null}
 
-      {initialPhotos.length === 0 ? <p className="empty-inline photo-empty">Chưa có ảnh nào được lưu cho ngày này.</p> : (
+      {initialPhotos.length === 0 && uploadItems.length === 0 ? <div className="photo-empty-state"><strong>Chưa có ảnh lưu cho ngày này</strong><p>Chọn Bluebook, ảnh vệ sinh hoặc sắp xếp. Ảnh sẽ hiện ở đây sau khi lưu.</p></div> : initialPhotos.length > 0 ? (
         <div className="photo-grid">
           {initialPhotos.map((photo) => <article className="photo-item" key={photo.id}>
             {/* Signed URLs expire quickly; the database stores only the private object path. */}
@@ -375,7 +380,7 @@ export function PhotoManager({ date, initialPhotos }: { date: string; initialPho
             <div className="photo-meta"><div><strong>{categoryLabels[photo.category] ?? "Ảnh"}</strong><span>{photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}</span>{photo.caption ? <span>{photo.caption}</span> : null}</div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })}>Xem ảnh</button><button className="text-button text-button-danger" type="button" onClick={() => removePhoto(photo.id)} disabled={busy}>Xóa ảnh</button></div></div>
           </article>)}
         </div>
-      )}
+      ) : null}
       <dialog className="photo-preview-dialog" ref={previewDialogRef} aria-labelledby="photo-preview-title" onClose={() => setActivePhoto(null)} onClick={(event) => { if (event.target === event.currentTarget) previewDialogRef.current?.close(); }}>
         {activePhoto ? <div className="photo-preview-dialog-content"><div className="photo-preview-dialog-heading"><div><h2 id="photo-preview-title">{activePhoto.title}</h2><p>{activePhoto.detail}</p></div><button className="button button-secondary" type="button" autoFocus onClick={() => previewDialogRef.current?.close()}>Đóng ảnh</button></div><Image src={activePhoto.url} alt={`${activePhoto.title}${activePhoto.detail ? ` · ${activePhoto.detail}` : ""}`} width={1600} height={1200} unoptimized /></div> : null}
       </dialog>

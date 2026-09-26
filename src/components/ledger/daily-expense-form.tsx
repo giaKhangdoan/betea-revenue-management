@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { addDailyExpense, type EntryActionState } from "@/app/ledger/actions";
+import { addDailyExpense, type EntryActionState } from "@/app/(private)/ledger/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 
 export function DailyExpenseForm({ date }: { date: string }) {

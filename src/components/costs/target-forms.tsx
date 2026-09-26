@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { saveMonthTargets, saveWeekTarget } from "@/app/costs/actions";
+import { saveMonthTargets, saveWeekTarget } from "@/app/(private)/costs/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { addDays, displayVndInput, formatBusinessDate } from "@/lib/finance/format";
 

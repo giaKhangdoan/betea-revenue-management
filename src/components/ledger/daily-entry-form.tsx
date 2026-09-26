@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { saveDailyRecord, type EntryActionState } from "@/app/ledger/actions";
+import { saveDailyRecord, type EntryActionState } from "@/app/(private)/ledger/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { formatVnd } from "@/lib/finance/format";
 
@@ -33,6 +33,8 @@ const fields = [
   { name: "grab_vnd", label: "Grab · tổng ngày" },
   { name: "shopee_vnd", label: "Shopee · tổng ngày" },
 ] as const;
+const shiftFields = fields.slice(0, 4);
+const deliveryFields = fields.slice(4);
 
 export function DailyEntryForm({ date, record }: { date: string; record: DailyRecord | null }) {
   const [state, formAction, pending] = useActionState<EntryActionState, FormData>(saveDailyRecord, undefined);
@@ -67,13 +69,27 @@ export function DailyEntryForm({ date, record }: { date: string; record: DailyRe
         <div><h2>Doanh thu trong ngày</h2><p>Nhập doanh thu cuối cùng của từng ca và hai kênh giao hàng.</p></div>
       </div>
       <input type="hidden" name="business_date" value={date} />
-      <div className="entry-grid">
-        {fields.map((field) => (
-          <label className="field" key={field.name}>
-            <span>{field.label}</span>
-            <span className="input-suffix"><input name={field.name} type="text" inputMode="numeric" placeholder="Ví dụ: 1.250.000" defaultValue={record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)} onChange={(event) => setSalesValues((current) => ({ ...current, [field.name]: event.currentTarget.value }))} aria-label={`${field.label}, đơn vị đồng`} /><span>đ</span></span>
-          </label>
-        ))}
+      <div className="entry-field-group">
+        <h3>Doanh thu tại cửa hàng · bốn ca</h3>
+        <div className="entry-grid">
+          {shiftFields.map((field) => (
+            <label className="field" key={field.name}>
+              <span>{field.label}</span>
+              <span className="input-suffix"><input name={field.name} type="text" inputMode="numeric" placeholder="Ví dụ: 1.250.000" defaultValue={record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)} onChange={(event) => setSalesValues((current) => ({ ...current, [field.name]: event.currentTarget.value }))} aria-label={`${field.label}, đơn vị đồng`} /><span>đ</span></span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="entry-field-group">
+        <h3>Ứng dụng giao hàng · tổng ngày</h3>
+        <div className="entry-grid">
+          {deliveryFields.map((field) => (
+            <label className="field" key={field.name}>
+              <span>{field.label}</span>
+              <span className="input-suffix"><input name={field.name} type="text" inputMode="numeric" placeholder="Ví dụ: 1.250.000" defaultValue={record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)} onChange={(event) => setSalesValues((current) => ({ ...current, [field.name]: event.currentTarget.value }))} aria-label={`${field.label}, đơn vị đồng`} /><span>đ</span></span>
+            </label>
+          ))}
+        </div>
       </div>
       <div className="daily-total" aria-live="polite">
         <div><span>{revenueIsComplete ? "Tổng doanh thu ngày" : "Tổng tạm tính · các khoản đã nhập"}</span><strong>{formatVnd(shownRevenue)}</strong></div>
