@@ -50,21 +50,21 @@ ID được đặt theo thứ tự stories trong spec: US-01 dashboard tháng; U
 
 ## Cook Progress
 
-- [ ] Phase 01: Nền tảng và bảo mật
-- [ ] Phase 02: Sổ doanh thu và chi phí theo ngày
-- [ ] Phase 03: Công tơ, chi phí tháng và lợi nhuận
-- [ ] Phase 04: Ảnh Bluebook và xác nhận vận hành
-- [ ] Phase 05: Dashboard, báo cáo và mục tiêu
+- [x] Phase 01: Nền tảng và bảo mật
+- [x] Phase 02: Sổ doanh thu và chi phí theo ngày
+- [x] Phase 03: Công tơ, chi phí tháng và lợi nhuận
+- [ ] Phase 04: Ảnh Bluebook và xác nhận vận hành — giao diện đã xác minh; chưa tải thử ảnh lên production.
+- [x] Phase 05: Dashboard, báo cáo và mục tiêu
 - [ ] Phase 06: Audit, hardening và phát hành
 
 ## Việc còn chờ
 
-1. Chủ cửa hàng tự đặt mật khẩu trên trang đăng nhập production bằng liên kết **Quên hoặc chưa đặt mật khẩu?**; không chia sẻ mật khẩu qua chat.
-2. Nhập bổ sung những ngày còn thiếu nếu cần. Workbook chỉ có 23 dòng từ 03/09 đến 25/09; ngày 01–02 và 26–30 không được tự tạo thành doanh thu 0.
-3. Nhập COGS POS, tiền thuê (mặc định 10 triệu, có thể chỉnh), lương, bill nước, bill điện/chỉ số công tơ và mục tiêu tháng. Chỉ khi đủ dữ liệu theo kỳ, báo cáo lợi nhuận và độ lệch mục tiêu mới có thể coi là hoàn chỉnh.
-4. Hoàn thiện runbook backup/restore cho database và ảnh riêng tư; bản sao database không chứa đối tượng trong Storage.
-5. Giới hạn ảnh là 5 MiB/tệp; ảnh lớn được nén trên trình duyệt. Mỗi lượt có thể tải tối đa 20 ảnh; không có giới hạn số lượng tích lũy ở cấp ứng dụng.
-6. Nếu có thay đổi mã nguồn, hiện có thể triển khai production bằng Vercel CLI; kết nối GitHub auto-deploy chưa được cấu hình.
+1. Nhập bổ sung các ngày còn thiếu nếu cần. Workbook chỉ có 23 dòng từ 03/09 đến 25/09; ngày 01–02 và 26–30 không được tự tạo thành doanh thu 0.
+2. Nhập COGS POS, tiền thuê (mặc định 10 triệu, có thể chỉnh), lương, bill nước, bill điện/chỉ số công tơ và mục tiêu tháng. Chỉ khi đủ dữ liệu theo kỳ, báo cáo lợi nhuận và độ lệch mục tiêu mới có thể coi là hoàn chỉnh.
+3. Hoàn thiện bản sao database/Storage độc lập và khôi phục thử. Snapshot ứng dụng trước migration đã được xác minh; chưa có kiểm thử phục hồi đầy đủ.
+4. Tải ảnh Bluebook/vệ sinh/sắp xếp thật trong kỳ vận hành. Trang production đã xác minh nút chọn nhiều ảnh và trạng thái trống; chưa tải ảnh thử để tránh thêm chứng từ giả vào sổ production.
+5. Supabase Advisor báo leaked-password protection đang tắt; Supabase chỉ cung cấp kiểm tra mật khẩu rò rỉ trên gói Pro trở lên. Không nâng cấp gói nếu chưa được yêu cầu.
+6. Kết nối GitHub auto-deploy nếu muốn; hiện có thể phát hành production bằng Vercel CLI.
 
 Bạn đã xác nhận Grab/Shopee được cộng ngoài bốn ca; nhập các dòng có dữ liệu trong tháng 9; vệ sinh/sắp xếp xác nhận một lần mỗi ngày. Vì vậy dữ liệu Excel sẽ nạp 23 ngày có số liệu từ 03/09 đến 25/09; ngày trống 01–02 và 26–30 không tạo dòng doanh thu. Không nhập công thức P&L cũ hoặc COGS từ workbook.
 
@@ -85,6 +85,8 @@ Rủi ro lớn nhất là phân quyền RLS sai, cộng doanh thu hai lần, bi�
 - Production đã triển khai trên Vercel; Supabase Auth Site URL và redirect allowlist chứa callback production/local cần thiết. Mã nguồn ở GitHub private; workbook và `.env.local` bị Git ignore.
 - Tùy chọn minimum password length 12 và secure password change đã bật; public sign-up, anonymous sign-in tắt, email confirmation bật. HIBP leaked-password protection hiện không có trên gói Free (Supabase Security Advisor ghi nhận một cảnh báo giới hạn gói); không nâng cấp gói khi chưa có yêu cầu.
 - Sau khi phát hiện production trả 404, đã sửa framework preset Vercel thành Next.js, tắt SSO protection của Vercel để owner không cần tài khoản Vercel, và triển khai lại. Đã kiểm tra production: `/` chuyển tới `/login`, trang đăng nhập/quên mật khẩu tải được, còn `/ledger` khi chưa đăng nhập chuyển về `/login`.
+- Đã áp dụng migration thứ ba; xác nhận 23 dòng vẫn nguyên, RLS bật cho bảng điều chỉnh và anon không đọc được. Giao diện trắng chủ đạo, biểu đồ tuần/ngày/tháng, bộ lọc kỳ gọn và thao tác xem ảnh đã phát hành. Build production READY; phiên owner xác minh trang tổng quan, báo cáo tháng/tuần/năm/khoảng ngày và sổ ngày ở chế độ chỉ đọc.
+- Còn kiểm thử khôi phục database/Storage, kiểm tra end-to-end tải/xem ảnh thật và đánh giá leaked-password protection (tính năng Supabase Pro+). Trang production hiện không có ảnh chứng từ nên chưa xác minh modal với ảnh đã lưu.
 - Snapshot ứng dụng trước migration đã mã hóa và kiểm tra được; chưa có bản dump độc lập, tải bản sao Storage hoặc khôi phục thử. Full restore runbook còn là việc cần hoàn thành.
 - GitHub auto-deploy chưa nối; lần phát hành giao diện mới đang dùng Vercel CLI.
 
