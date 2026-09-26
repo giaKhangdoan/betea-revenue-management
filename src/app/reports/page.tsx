@@ -269,11 +269,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       <section className="surface report-filter">
         <form action="/reports" className="report-filter-form">
           <label className="field"><span>Loại kỳ</span><select name="mode" defaultValue={mode}><option value="month">Tháng</option><option value="week">Tuần</option><option value="year">Năm</option><option value="custom">Khoảng ngày</option></select></label>
-          <label className="field"><span>Tháng</span><input type="month" name="month" min="2026-09" defaultValue={mode === "month" ? requestedStart.slice(0, 7) : today.slice(0, 7)} /></label>
-          <label className="field"><span>Ngày trong tuần</span><input type="date" name="date" min="2026-09-01" defaultValue={mode === "week" ? (validDate(params.date) ? params.date : today) : today} /></label>
-          <label className="field"><span>Năm</span><input type="number" name="year" min="2026" max={today.slice(0, 4)} defaultValue={mode === "year" ? requestedStart.slice(0, 4) : today.slice(0, 4)} /></label>
-          <label className="field"><span>Từ ngày</span><input type="date" name="from" min="2026-09-01" defaultValue={mode === "custom" ? params.from : today} /></label>
-          <label className="field"><span>Đến ngày</span><input type="date" name="to" min="2026-09-01" defaultValue={mode === "custom" ? params.to : today} /></label>
+          {mode === "month" ? <label className="field"><span>Tháng</span><input type="month" name="month" min="2026-09" defaultValue={requestedStart.slice(0, 7)} /></label> : null}
+          {mode === "week" ? <label className="field"><span>Chọn ngày trong tuần</span><input type="date" name="date" min="2026-09-01" defaultValue={validDate(params.date) ? params.date : today} /></label> : null}
+          {mode === "year" ? <label className="field"><span>Năm</span><input type="number" name="year" min="2026" max={today.slice(0, 4)} defaultValue={requestedStart.slice(0, 4)} /></label> : null}
+          {mode === "custom" ? <><label className="field"><span>Từ ngày</span><input type="date" name="from" min="2026-09-01" defaultValue={params.from ?? today} /></label><label className="field"><span>Đến ngày</span><input type="date" name="to" min="2026-09-01" defaultValue={params.to ?? today} /></label></> : null}
           <button className="button" type="submit">Xem báo cáo</button>
         </form>
       </section>
