@@ -225,6 +225,7 @@ button { color: inherit; }
 .photo-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .photo-picker-note { color: var(--muted); font-size: 12px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.field input.visually-hidden { position: fixed; width: 1px; height: 1px; min-height: 1px; margin: -1px; border: 0; padding: 0; }
 .photo-selection-summary { margin: 0; color: var(--accent-strong); font-size: 13px; font-weight: 600; }
 .photo-form > .button { justify-self: start; }
 .photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 16px; }
