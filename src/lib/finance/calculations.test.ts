@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateMonthlyAmountByDay,
+  allocateSignedMonthlyAmountByDay,
   calculateDailyExpenses,
   calculateDailyRevenue,
   calculateMonthlyElectricity,
+  calculateReconciliationDifferenceVnd,
+  hasMeterResetWithinMonth,
   calculateProfitVnd,
   daysInMonth,
   weekRangeContaining,
@@ -25,6 +28,12 @@ describe("financial calculations", () => {
       totalVnd: 1_075_000,
       missingFields: [],
     });
+  });
+
+  it("calculates a signed Bluebook difference from the two daily totals", () => {
+    expect(calculateReconciliationDifferenceVnd(1_050_000, 1_075_000)).toBe(-25_000);
+    expect(calculateReconciliationDifferenceVnd(1_100_000, 1_075_000)).toBe(25_000);
+    expect(calculateReconciliationDifferenceVnd(1_075_000, 1_075_000)).toBe(0);
   });
 
   it("keeps a missing channel incomplete, while a closed day is known zero", () => {
@@ -56,6 +65,10 @@ describe("financial calculations", () => {
     expect(daily.slice(0, 15).every((day) => day.amountVnd === 35)).toBe(true);
     expect(daily.slice(15).every((day) => day.amountVnd === 34)).toBe(true);
     expect(daily.reduce((sum, day) => sum + day.amountVnd, 0)).toBe(1_001);
+    const negative = allocateSignedMonthlyAmountByDay(-1_001, "2024-02");
+    expect(negative.reduce((sum, day) => sum + day.amountVnd, 0)).toBe(-1_001);
+    expect(negative.slice(0, 15).every((day) => day.amountVnd === -35)).toBe(true);
+    expect(negative.slice(15).every((day) => day.amountVnd === -34)).toBe(true);
   });
 
   it("allocates monthly rent, wages, water, and the billed electricity by actual calendar days", () => {
@@ -70,6 +83,7 @@ describe("financial calculations", () => {
         billAmountVnd: 347_100,
       },
       cogsVnd: 1_000_000,
+      adjustmentsVnd: -2_900,
     };
     const daily = calculateDailyExpenses("2024-02-29", costs, [{ amountVnd: 25_000, reason: "Mua đá" }]);
     expect(daily).toMatchObject({
@@ -78,7 +92,8 @@ describe("financial calculations", () => {
       waterVnd: 10_000,
       electricityVnd: 11_968,
       incidentalVnd: 25_000,
-      totalVnd: 491_795,
+      adjustmentVnd: -100,
+      totalVnd: 491_695,
     });
   });
 
@@ -117,7 +132,7 @@ describe("financial calculations", () => {
     ).toThrow(RangeError);
   });
 
-  it("returns no variance percent when the meter estimate is zero", () => {
+  it("handles variance percent when the meter estimate is zero", () => {
     expect(
       calculateMonthlyElectricity({
         firstDayMorningKwh: 50,
@@ -125,6 +140,40 @@ describe("financial calculations", () => {
         billAmountVnd: 10_000,
       }),
     ).toMatchObject({ estimatedVnd: 0, differenceVnd: 10_000, differencePercent: null });
+
+    expect(
+      calculateMonthlyElectricity({
+        firstDayMorningKwh: 50,
+        lastDayEveningKwh: 50,
+        billAmountVnd: 0,
+      }),
+    ).toMatchObject({ estimatedVnd: 0, differenceVnd: 0, differencePercent: 0 });
+  });
+
+  it("does not estimate electricity across an in-month meter reset, but uses the bill when available", () => {
+    const readings = [
+      { businessDate: "2026-09-01", morningKwh: 100, eveningKwh: 120 },
+      { businessDate: "2026-09-15", morningKwh: 20, eveningKwh: 30 },
+      { businessDate: "2026-09-30", morningKwh: 80, eveningKwh: 95 },
+    ];
+    expect(hasMeterResetWithinMonth(readings)).toBe(true);
+    expect(hasMeterResetWithinMonth(readings.slice(0, 1))).toBe(false);
+    expect(hasMeterResetWithinMonth([
+      { businessDate: "2026-10-01", morningKwh: 20, eveningKwh: 22, resetReason: "Thay đồng hồ đầu tháng" },
+      { businessDate: "2026-10-31", morningKwh: 80, eveningKwh: 95 },
+    ])).toBe(true);
+    expect(calculateMonthlyElectricity({
+      firstDayMorningKwh: 100,
+      lastDayEveningKwh: 95,
+      billAmountVnd: null,
+      meterResetDetected: true,
+    })).toMatchObject({ status: "meter_reset", usageKwh: null, estimatedVnd: null, expenseVnd: null });
+    expect(calculateMonthlyElectricity({
+      firstDayMorningKwh: 100,
+      lastDayEveningKwh: 95,
+      billAmountVnd: 500_000,
+      meterResetDetected: true,
+    })).toMatchObject({ status: "meter_reset", estimatedVnd: null, billVnd: 500_000, expenseVnd: 500_000 });
   });
 
   it("subtracts COGS only from monthly/yearly profit", () => {

@@ -40,7 +40,9 @@ yarn-error.log*
 *.csv
 .owner-setup-secret
 .supabase/
+/supabase/.temp/
 .betea-local-data/
+/private-backups/
 plans/.current-brainstorm.md
 
 # vercel

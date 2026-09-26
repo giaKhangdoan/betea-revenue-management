@@ -8,6 +8,7 @@ const labels: Record<string, string> = {
   daily_records: "Sổ ngày",
   monthly_costs: "Chi phí tháng",
   daily_expenses: "Chi phí phát sinh",
+  monthly_cost_adjustments: "Điều chỉnh chi phí tháng",
   weekly_targets: "Mục tiêu tuần",
   monthly_targets: "Mục tiêu tháng",
   day_photos: "Ảnh đối chiếu",
@@ -27,10 +28,16 @@ const labels: Record<string, string> = {
   electricity_bill_vnd: "Bill điện",
   electricity_morning_kwh: "Công tơ sáng",
   electricity_evening_kwh: "Công tơ tối",
+  electricity_reset_reason: "Lý do reset công tơ",
+  reconciliation_status: "Trạng thái Bluebook",
+  bluebook_total_vnd: "Tổng doanh thu Bluebook",
+  reconciliation_difference_vnd: "Chênh lệch Bluebook − website",
+  reconciliation_note: "Ghi chú đối soát",
   cleaning_done: "Xác nhận vệ sinh",
   arrangement_done: "Xác nhận sắp xếp",
   business_status: "Trạng thái ngày",
   amount_vnd: "Số tiền",
+  amount_delta_vnd: "Mức điều chỉnh",
   reason: "Lý do",
   category: "Loại ảnh",
   shift_code: "Ca",
@@ -46,6 +53,7 @@ function displayValue(field: string, value: unknown): string {
   if (field.endsWith("_vnd") && typeof value === "number") return formatVnd(value);
   if (field.endsWith("_kwh")) return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(Number(value))} kWh`;
   if (field === "business_status") return value === "closed" ? "Đã chốt" : value === "no_business" ? "Không kinh doanh" : "Đang nhập";
+  if (field === "reconciliation_status") return value === "matched" ? "Khớp" : value === "discrepancy" ? "Lệch" : value === "pending" ? "Chờ kiểm tra" : "Chưa đối chiếu";
   if (field === "category") return labels[String(value)] ?? String(value);
   return String(value);
 }

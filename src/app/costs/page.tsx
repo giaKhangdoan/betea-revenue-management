@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { MonthlyCostForm } from "@/components/costs/monthly-cost-form";
+import { MonthlyAdjustmentManager } from "@/components/costs/monthly-adjustment-manager";
 import { TargetForms } from "@/components/costs/target-forms";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
-import { calculateMonthlyElectricity } from "@/lib/finance/calculations";
+import { calculateMonthlyElectricity, hasMeterResetWithinMonth } from "@/lib/finance/calculations";
 import { currentBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
 
 export const dynamic = "force-dynamic";
@@ -27,18 +28,26 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
   const owner = await requireOwnerClient();
   if (!owner) redirect("/login");
 
-  const [costResult, targetResult, weekResult, firstMeterResult, lastMeterResult] = await Promise.all([
+  const [costResult, targetResult, weekResult, meterReadingsResult, adjustmentsResult] = await Promise.all([
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("weekly_targets").select("revenue_target_vnd").eq("owner_id", owner.ownerId).eq("week_start", selectedWeekStart).maybeSingle(),
-    owner.supabase.from("daily_records").select("electricity_morning_kwh").eq("owner_id", owner.ownerId).eq("business_date", start).maybeSingle(),
-    owner.supabase.from("daily_records").select("electricity_evening_kwh").eq("owner_id", owner.ownerId).eq("business_date", end).maybeSingle(),
+    owner.supabase.from("daily_records").select("business_date,electricity_morning_kwh,electricity_evening_kwh,electricity_reset_reason").eq("owner_id", owner.ownerId).gte("business_date", start).lte("business_date", end).order("business_date"),
+    owner.supabase.from("monthly_cost_adjustments").select("id,category,amount_delta_vnd,note,created_at").eq("owner_id", owner.ownerId).eq("month_start", start).order("created_at", { ascending: false }),
   ]);
   const costs = costResult.data;
+  const meterReadings = meterReadingsResult.data ?? [];
+  const meterReadingsByDate = new Map(meterReadings.map((reading) => [reading.business_date, reading]));
   const electricity = calculateMonthlyElectricity({
-    firstDayMorningKwh: firstMeterResult.data?.electricity_morning_kwh ?? null,
-    lastDayEveningKwh: lastMeterResult.data?.electricity_evening_kwh ?? null,
+    firstDayMorningKwh: meterReadingsByDate.get(start)?.electricity_morning_kwh ?? null,
+    lastDayEveningKwh: meterReadingsByDate.get(end)?.electricity_evening_kwh ?? null,
     billAmountVnd: costs?.electricity_bill_vnd ?? null,
+    meterResetDetected: hasMeterResetWithinMonth(meterReadings.map((reading) => ({
+      businessDate: reading.business_date,
+      morningKwh: reading.electricity_morning_kwh,
+      eveningKwh: reading.electricity_evening_kwh,
+      resetReason: reading.electricity_reset_reason,
+    }))),
   });
 
   return (
@@ -50,12 +59,14 @@ export default async function CostsPage({ searchParams }: { searchParams: Promis
       <div className="costs-layout">
         <div className="day-primary">
           <MonthlyCostForm month={month} costs={costs} />
+          <MonthlyAdjustmentManager month={month} adjustments={adjustmentsResult.data ?? []} />
           <section className="surface electricity-card">
             <div className="section-heading"><div><h2>Đối chiếu công tơ điện</h2><p>{start} ca sáng đến {end} ca tối · đơn giá mặc định 3.471 ₫/kWh</p></div></div>
-            {electricity.status === "missing_reading" ? <p className="incomplete-callout">Cần chỉ số điện ca sáng ngày đầu tháng và ca tối ngày cuối tháng để tính mức dùng. Bạn có thể nhập bill trước; bill sẽ được dùng làm chi phí tạm thời.</p> : null}
+            {electricity.status === "missing_reading" ? <p className="incomplete-callout">Cần chỉ số điện ca sáng ngày đầu tháng và ca tối ngày cuối tháng để tính mức dùng.{electricity.billVnd === null ? " Bạn có thể nhập bill trước; bill sẽ được dùng làm chi phí tạm thời." : " Bill điện hiện được dùng làm chi phí tháng; estimate sẽ hiện khi đủ chỉ số."}</p> : null}
             {electricity.status === "negative_consumption" ? <p className="form-error">Chỉ số tối cuối tháng đang thấp hơn chỉ số sáng đầu tháng. Kiểm tra lại công tơ trước khi chốt.</p> : null}
+            {electricity.status === "meter_reset" ? <p className={electricity.billVnd === null ? "form-error" : "incomplete-callout"}>Có chỉ số công tơ giảm trong tháng nên không dùng phép trừ đầu/cuối để ước tính. {electricity.billVnd === null ? "Hãy kiểm tra chỉ số hoặc nhập bill điện để có chi phí thực tế." : "Bill điện được dùng làm chi phí thực tế; không hiển thị estimate/chênh lệch từ công tơ."}</p> : null}
             <div className="electricity-grid">
-              <div><span>Mức dùng tháng</span><strong>{electricity.usageKwh === null ? "Chưa đủ chỉ số" : `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(electricity.usageKwh)} kWh`}</strong></div>
+              <div><span>Mức dùng tháng</span><strong>{electricity.status === "meter_reset" ? "Không tính do công tơ giảm" : electricity.usageKwh === null ? "Chưa đủ chỉ số" : `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(electricity.usageKwh)} kWh`}</strong></div>
               <div><span>Tiền điện ước tính</span><strong>{formatVnd(electricity.estimatedVnd)}</strong></div>
               <div><span>Tiền điện bill dùng tính</span><strong>{formatVnd(electricity.expenseVnd)}</strong></div>
               <div><span>Chênh so với ước tính</span><strong>{electricity.differenceVnd === null ? "—" : `${formatVnd(electricity.differenceVnd)} · ${electricity.differencePercent === null ? "không tính được %" : `${electricity.differencePercent > 0 ? "+" : ""}${electricity.differencePercent.toFixed(1)}%`}`}</strong></div>

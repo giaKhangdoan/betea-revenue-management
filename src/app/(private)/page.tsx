@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
-import { calculateDailyRevenue, calculateMonthlyElectricity, calculateProfitVnd } from "@/lib/finance/calculations";
+import { allocateMonthlyAmountByDay, allocateSignedMonthlyAmountByDay, calculateDailyRevenue, calculateMonthlyElectricity, calculateProfitVnd, hasMeterResetWithinMonth } from "@/lib/finance/calculations";
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
 
 export const dynamic = "force-dynamic";
@@ -31,17 +31,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const owner = await requireOwnerClient();
   if (!owner) redirect("/login");
 
-  const [daysResult, costResult, targetResult, expenseResult] = await Promise.all([
+  const [daysResult, costResult, targetResult, expenseResult, adjustmentsResult] = await Promise.all([
     owner.supabase.from("daily_records").select("business_date,business_status,shift_06_10_vnd,shift_10_14_vnd,shift_14_18_vnd,shift_18_22_vnd,grab_vnd,shopee_vnd,electricity_morning_kwh,electricity_evening_kwh")
       .eq("owner_id", owner.ownerId).gte("business_date", effectiveStart).lte("business_date", asOf).order("business_date"),
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("daily_expenses").select("amount_vnd").eq("owner_id", owner.ownerId).gte("business_date", effectiveStart).lte("business_date", asOf),
+    owner.supabase.from("monthly_cost_adjustments").select("amount_delta_vnd").eq("owner_id", owner.ownerId).eq("month_start", start),
   ]);
   const records = (daysResult.data ?? []) as DayRow[];
   const recordMap = new Map(records.map((record) => [record.business_date, record]));
   const expenses = expenseResult.data ?? [];
   const incidentalsVnd = expenses.reduce((sum, expense) => sum + Number(expense.amount_vnd), 0);
+  const monthlyAdjustmentsVnd = (adjustmentsResult.data ?? []).reduce((sum, adjustment) => sum + Number(adjustment.amount_delta_vnd), 0);
   const dayCount = Math.max(0, Math.floor((Date.parse(`${asOf}T12:00:00Z`) - Date.parse(`${effectiveStart}T12:00:00Z`)) / 86400000) + (asOf >= effectiveStart ? 1 : 0));
   const dailyRows = Array.from({ length: dayCount }, (_, index) => {
     const date = addDays(effectiveStart, index);
@@ -63,25 +65,41 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     firstDayMorningKwh: recordMap.get(start)?.electricity_morning_kwh ?? null,
     lastDayEveningKwh: recordMap.get(end)?.electricity_evening_kwh ?? null,
     billAmountVnd: costs?.electricity_bill_vnd ?? null,
+    meterResetDetected: hasMeterResetWithinMonth(records.map((record) => ({
+      businessDate: record.business_date,
+      morningKwh: record.electricity_morning_kwh,
+      eveningKwh: record.electricity_evening_kwh,
+    }))),
   });
   const monthIsFinished = end <= today;
   const costsComplete = Boolean(
     costs && costs.cogs_vnd !== null && costs.wages_vnd !== null && costs.water_bill_vnd !== null && monthlyElectricity.expenseVnd !== null,
   );
-  const preCogsExpensesVnd = costsComplete && monthIsFinished
-    ? Number(costs?.rent_vnd ?? 10000000) + Number(costs?.wages_vnd ?? 0) + Number(costs?.water_bill_vnd ?? 0) + Number(monthlyElectricity.expenseVnd ?? 0) + incidentalsVnd
+  const monthKey = selectedMonth as `${number}-${number}`;
+  const preCogsExpensesVnd = costsComplete
+    ? dailyRows.reduce((sum, row) => {
+      const dayIndex = Number(row.date.slice(8, 10)) - 1;
+      const allocatedBaseCosts = [
+        Number(costs?.rent_vnd ?? 10000000),
+        Number(costs?.wages_vnd ?? 0),
+        Number(costs?.water_bill_vnd ?? 0),
+        Number(monthlyElectricity.expenseVnd ?? 0),
+      ].reduce((daySum, amount) => daySum + (allocateMonthlyAmountByDay(amount, monthKey)[dayIndex]?.amountVnd ?? 0), 0);
+      const allocatedAdjustment = allocateSignedMonthlyAmountByDay(monthlyAdjustmentsVnd, monthKey)[dayIndex]?.amountVnd ?? 0;
+      return sum + allocatedBaseCosts + allocatedAdjustment;
+    }, incidentalsVnd)
     : null;
   const profit = calculateProfitVnd({
     periodKind: "month",
-    revenueVnd: revenueComplete && monthIsFinished ? knownRevenue : null,
+    revenueVnd: revenueComplete ? knownRevenue : null,
     expensesVnd: preCogsExpensesVnd,
     cogsVnd: costs?.cogs_vnd ?? null,
   });
   const target = targetResult.data;
   const revenueTarget = target?.revenue_target_vnd ?? null;
   const profitTarget = target?.profit_target_vnd ?? null;
-  const revenuePercent = revenueTarget && revenueTarget > 0 ? (knownRevenue / revenueTarget) * 100 : null;
-  const profitVariance = profit !== null && profitTarget !== null && profitTarget > 0 ? ((profit - profitTarget) / profitTarget) * 100 : null;
+  const revenuePercent = revenueComplete && revenueTarget && revenueTarget > 0 ? (knownRevenue / revenueTarget) * 100 : null;
+  const profitVariance = monthIsFinished && profit !== null && profitTarget !== null && profitTarget > 0 ? ((profit - profitTarget) / profitTarget) * 100 : null;
 
   const weekGroups = new Map<string, { known: number; missing: number; count: number }>();
   for (const row of dailyRows) {
@@ -93,6 +111,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     weekGroups.set(monday, group);
   }
   const weekRows = [...weekGroups.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const maximumWeekRevenue = Math.max(1, ...weekRows.map(([, group]) => group.known));
   const monthLabel = new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric", timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(`${start}T12:00:00+07:00`));
 
   return (
@@ -102,13 +121,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="heading-actions"><form className="month-jump" action="/"><label htmlFor="dashboard-month">Chọn tháng</label><input id="dashboard-month" type="month" name="month" min="2026-09" defaultValue={selectedMonth} /><button className="button button-secondary" type="submit">Xem</button></form><Link className="button" href={`/ledger/${today}`}>Nhập hôm nay</Link></div>
       </div>
       <section className="metric-grid" aria-label="Chỉ số tháng">
-        <article className="metric-card surface"><div className="metric-label">Doanh thu đã nhập đủ ngày</div><strong className="metric-value">{formatVnd(knownRevenue)}</strong><p>{incompleteDays > 0 ? `Còn ${incompleteDays} ngày cần nhập hoặc chốt` : "Đã đủ doanh thu các ngày đến thời điểm xem"}</p>{revenueTarget !== null ? <div className="target-progress"><div><span>Mục tiêu doanh thu</span><strong>{formatVnd(revenueTarget)}</strong></div><div className="progress-track"><span style={{ width: `${Math.min(100, Math.max(0, revenuePercent ?? 0))}%` }} /></div><small>{revenuePercent === null ? "Chưa có doanh thu" : `${revenuePercent.toFixed(0)}% mục tiêu`}</small></div> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu tháng</Link>}</article>
-        <article className="metric-card surface"><div className="metric-label">Lợi nhuận tháng sau COGS</div><strong className="metric-value">{profit === null ? "Chưa đủ dữ liệu" : formatVnd(profit)}</strong><p>{profit === null ? (!monthIsFinished ? "Chỉ chốt khi hết tháng và đủ các khoản cần nhập." : "Kiểm tra doanh thu, COGS, lương, nước và điện tháng.") : "Đã trừ COGS từ POS và các chi phí quản lý."}</p>{profitVariance !== null ? <small className={`variance ${profitVariance >= 0 ? "variance-positive" : "variance-negative"}`}>{profitVariance >= 0 ? "+" : ""}{profitVariance.toFixed(1)}% so với mục tiêu lợi nhuận</small> : profitTarget !== null ? <small className="form-note">Mục tiêu lợi nhuận: {formatVnd(profitTarget)} · chênh lệch hiện khi đủ dữ liệu.</small> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu lợi nhuận</Link>}</article>
+        <article className="metric-card surface"><div className="metric-label">Doanh thu đã nhập đủ ngày</div><strong className="metric-value">{formatVnd(knownRevenue)}</strong><p>{incompleteDays > 0 ? `Còn ${incompleteDays} ngày cần nhập hoặc chốt` : monthIsFinished ? "Đã đủ doanh thu các ngày trong tháng" : `Đã nhập đủ đến ${formatBusinessDate(asOf, { day: "numeric", month: "short" })}`}</p>{revenueTarget !== null ? <div className="target-progress"><div><span>{monthIsFinished ? "Mục tiêu doanh thu" : "Tiến độ mục tiêu tháng"}</span><strong>{formatVnd(revenueTarget)}</strong></div><div className="progress-track"><span style={{ width: `${Math.min(100, Math.max(0, revenuePercent ?? 0))}%` }} /></div><small>{revenuePercent === null ? incompleteDays > 0 ? "Nhập đủ ngày để xem tỷ lệ mục tiêu." : "Chưa có dữ liệu doanh thu." : `${revenuePercent.toFixed(0)}%${monthIsFinished ? " mục tiêu" : ` mục tiêu đến ${formatBusinessDate(asOf, { day: "numeric", month: "short" })}`}`}</small></div> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu tháng</Link>}</article>
+        <article className="metric-card surface"><div className="metric-label">{monthIsFinished ? "Lợi nhuận tháng sau COGS" : "Lợi nhuận tạm tính sau COGS"}</div><strong className="metric-value">{profit === null ? "Chưa đủ dữ liệu" : formatVnd(profit)}</strong><p>{profit === null ? monthlyElectricity.status === "meter_reset" && monthlyElectricity.expenseVnd === null ? "Công tơ có mức giảm/reset; hãy nhập bill điện để hoàn tất chi phí." : incompleteDays > 0 ? `Còn ${incompleteDays} ngày thiếu doanh thu.` : "Kiểm tra COGS, lương, nước và bill điện hoặc chỉ số công tơ." : monthIsFinished ? "Đã trừ COGS POS và các chi phí quản lý." : `Tạm tính đến ${formatBusinessDate(asOf, { day: "numeric", month: "long" })}; COGS theo số hiện đã nhập.`}</p>{profitVariance !== null ? <small className={`variance ${profitVariance >= 0 ? "variance-positive" : "variance-negative"}`}>{profitVariance >= 0 ? "+" : ""}{profitVariance.toFixed(1)}% so với mục tiêu lợi nhuận</small> : profitTarget !== null ? <small className="form-note">Mục tiêu lợi nhuận: {formatVnd(profitTarget)}{monthIsFinished ? " · chênh lệch hiện khi đủ dữ liệu." : " · đối chiếu sau khi chốt tháng."}</small> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu lợi nhuận</Link>}</article>
       </section>
       <div className="dashboard-columns">
         <section className="surface week-summary-card">
           <div className="section-heading"><div><h2>Doanh thu theo tuần</h2><p>Ngày từ Thứ 2 đến Chủ nhật; tuần nằm trong tháng được nhóm theo lịch.</p></div><Link className="text-link" href={`/ledger?date=${today}`}>Mở sổ tuần</Link></div>
-          {weekRows.length === 0 ? <p className="empty-inline">Chưa có ngày nào trong tháng này.</p> : <div className="month-week-list">{weekRows.map(([monday, group]) => <div className="month-week-row" key={monday}><div><strong>{formatBusinessDate(monday, { day: "numeric", month: "short" })}</strong><span>{group.count} ngày · {group.missing ? `${group.missing} ngày thiếu` : "đủ dữ liệu"}</span></div><strong>{formatVnd(group.known)}{group.missing ? <small> phần đã đủ dữ liệu</small> : null}</strong><Link className="text-link" href={`/ledger?date=${monday}`}>Xem tuần</Link></div>)}</div>}
+          {weekRows.length === 0 ? <p className="empty-inline">Chưa có ngày nào trong tháng này.</p> : <div className="month-week-list">{weekRows.map(([monday, group]) => <div className="month-week-row" key={monday}><div><strong>{formatBusinessDate(monday, { day: "numeric", month: "short" })}</strong><span>{group.count} ngày · {group.missing ? `${group.missing} ngày thiếu` : "đủ dữ liệu"}</span></div><strong>{formatVnd(group.known)}{group.missing ? <small> phần đã đủ dữ liệu</small> : null}</strong><Link className="text-link" href={`/ledger?date=${monday}`}>Xem tuần</Link><div className="week-revenue-track" role="img" aria-label={`Doanh thu tuần bắt đầu ${formatBusinessDate(monday, { day: "numeric", month: "long" })}: ${formatVnd(group.known)}${group.missing ? `, còn ${group.missing} ngày thiếu dữ liệu` : ""}`}><span style={{ width: `${Math.max(1, (group.known / maximumWeekRevenue) * 100)}%` }} /></div></div>)}</div>}
         </section>
         <section className="surface quick-actions-card">
           <div className="section-heading"><div><h2>Quản lý nhanh</h2><p>Nhập sổ và đối chiếu các khoản cần thiết.</p></div></div>

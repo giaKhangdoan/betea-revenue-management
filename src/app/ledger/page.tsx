@@ -69,12 +69,15 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
             const status = isBeforeStart ? "Ngoài sổ" : future ? "Chưa đến" : !record ? "Chưa nhập" : record.business_status === "no_business" ? "Không kinh doanh" : revenue?.complete && record.business_status === "closed" ? "Đã chốt" : revenue?.complete ? "Đủ số liệu" : "Còn thiếu";
             const shifts = record ? [record.shift_06_10_vnd, record.shift_10_14_vnd, record.shift_14_18_vnd, record.shift_18_22_vnd].reduce<number>((sum, value) => sum + Number(value ?? 0), 0) : null;
             const delivery = record ? Number(record.grab_vnd ?? 0) + Number(record.shopee_vnd ?? 0) : null;
+            const reconciliation = record?.reconciliation_status ?? "unreconciled";
+            const reconciliationLabel = reconciliation === "matched" ? "Bluebook: Khớp" : reconciliation === "discrepancy" ? "Bluebook: Lệch" : reconciliation === "pending" ? "Bluebook: Chờ kiểm tra" : "Bluebook: Chưa đối chiếu";
             return (
               <Link className={`week-day ${date === selectedDate ? "week-day-selected" : ""} ${isBeforeStart ? "week-day-muted" : ""}`} href={isBeforeStart ? "/ledger" : `/ledger/${date}`} key={date} aria-label={`${formatBusinessDate(date)}, ${status}`}>
                 <div className="week-day-top"><span>{formatBusinessDate(date, { weekday: "short" })}</span><span className={`status ${status === "Đã chốt" || status === "Đủ số liệu" ? "status-success" : status === "Còn thiếu" || status === "Chưa nhập" ? "status-warning" : "status-neutral"}`}>{status}</span></div>
                 <strong className="week-day-date">{formatBusinessDate(date, { day: "numeric", month: "short" })}</strong>
                 {isBeforeStart || future ? <span className="week-day-total">—</span> : record?.business_status === "no_business" ? <span className="week-day-total">0 ₫</span> : !revenue?.complete ? <span className="week-day-total muted">Chưa đủ dữ liệu</span> : <span className="week-day-total">{formatVnd(revenue.totalVnd)}</span>}
                 {record && !isBeforeStart && !future ? <span className="week-day-sources">Ca {formatVnd(shifts)} · G/S {formatVnd(delivery)}</span> : <span className="week-day-sources">Mở sổ ngày</span>}
+                {record && !isBeforeStart && !future ? <span className={`week-day-reconciliation reconciliation-${reconciliation}`}>{reconciliationLabel}</span> : null}
               </Link>
             );
           })}

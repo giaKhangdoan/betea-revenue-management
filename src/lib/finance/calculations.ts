@@ -24,10 +24,18 @@ export type ElectricityInput = {
   firstDayMorningKwh: number | null;
   lastDayEveningKwh: number | null;
   billAmountVnd: VndAmount | null;
+  meterResetDetected?: boolean;
+};
+
+export type ElectricityMeterReading = {
+  businessDate: string;
+  morningKwh: number | string | null;
+  eveningKwh: number | string | null;
+  resetReason?: string | null;
 };
 
 export type ElectricityCalculation = {
-  status: "complete" | "missing_reading" | "negative_consumption";
+  status: "complete" | "missing_reading" | "negative_consumption" | "meter_reset";
   usageKwh: number | null;
   estimatedVnd: VndAmount | null;
   billVnd: VndAmount | null;
@@ -43,6 +51,7 @@ export type MonthlyCostInput = {
   waterBillVnd: VndAmount | null;
   electricity: ElectricityInput;
   cogsVnd: VndAmount | null;
+  adjustmentsVnd?: number;
 };
 
 export type DailyExpenseCalculation = {
@@ -51,6 +60,7 @@ export type DailyExpenseCalculation = {
   wagesVnd: VndAmount | null;
   waterVnd: VndAmount | null;
   electricityVnd: VndAmount | null;
+  adjustmentVnd: number;
   incidentalVnd: VndAmount;
   totalVnd: VndAmount | null;
   missingCosts: string[];
@@ -59,6 +69,22 @@ export type DailyExpenseCalculation = {
 export type ProfitPeriodKind = "week" | "custom" | "month" | "year";
 
 const ELECTRICITY_VND_PER_KWH = 3_471;
+
+export function hasMeterResetWithinMonth(readings: readonly ElectricityMeterReading[]): boolean {
+  if (readings.some((reading) => reading.resetReason?.trim())) return true;
+  const sorted = [...readings].sort((a, b) => a.businessDate.localeCompare(b.businessDate));
+  let previous: number | null = null;
+  for (const reading of sorted) {
+    for (const value of [reading.morningKwh, reading.eveningKwh]) {
+      if (value === null || String(value).trim() === "") continue;
+      const current = Number(value);
+      if (!Number.isFinite(current) || current < 0) continue;
+      if (previous !== null && current < previous) return true;
+      previous = current;
+    }
+  }
+  return false;
+}
 
 function parseDate(value: string): { year: number; month: number; day: number } {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -87,6 +113,10 @@ function assertVnd(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new RangeError(`${label} must be a non-negative integer VND amount`);
   }
+}
+
+function assertSignedVnd(value: number, label: string): void {
+  if (!Number.isSafeInteger(value)) throw new RangeError(`${label} must be an integer VND amount`);
 }
 
 function sumVnd(values: readonly number[]): VndAmount {
@@ -142,6 +172,14 @@ export function calculateDailyRevenue(input: DailyRevenueInput): DailyRevenueRes
   return { complete: true, totalVnd: sumVnd(values), missingFields: [] };
 }
 
+export function calculateReconciliationDifferenceVnd(bluebookTotalVnd: VndAmount, websiteTotalVnd: VndAmount): number {
+  assertVnd(bluebookTotalVnd, "Bluebook revenue");
+  assertVnd(websiteTotalVnd, "Website revenue");
+  const difference = bluebookTotalVnd - websiteTotalVnd;
+  if (!Number.isSafeInteger(difference)) throw new RangeError("Reconciliation difference exceeds the safe integer range");
+  return difference;
+}
+
 export function weekRangeContaining(date: DateOnly): { startDate: DateOnly; endDate: DateOnly } {
   const parts = parseDate(date);
   const utcDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
@@ -177,6 +215,19 @@ export function allocateMonthlyAmountByDay(
   }));
 }
 
+/** Distributes positive or negative monthly adjustments while preserving the exact signed total. */
+export function allocateSignedMonthlyAmountByDay(
+  totalVnd: number,
+  month: MonthKey,
+): Array<{ date: DateOnly; amountVnd: number }> {
+  assertSignedVnd(totalVnd, "Monthly adjustment");
+  const sign = totalVnd < 0 ? -1 : 1;
+  return allocateMonthlyAmountByDay(Math.abs(totalVnd), month).map((day) => ({
+    date: day.date,
+    amountVnd: day.amountVnd * sign,
+  }));
+}
+
 export function calculateMonthlyElectricity(input: ElectricityInput): ElectricityCalculation {
   if (input.billAmountVnd !== null) assertVnd(input.billAmountVnd, "Electricity bill");
 
@@ -190,6 +241,18 @@ export function calculateMonthlyElectricity(input: ElectricityInput): Electricit
   }
 
   const billVnd = input.billAmountVnd;
+  if (input.meterResetDetected) {
+    return {
+      status: "meter_reset",
+      usageKwh: null,
+      estimatedVnd: null,
+      billVnd,
+      expenseVnd: billVnd,
+      differenceVnd: null,
+      differencePercent: null,
+    };
+  }
+
   if (input.firstDayMorningKwh === null || input.lastDayEveningKwh === null) {
     return {
       status: "missing_reading",
@@ -225,9 +288,11 @@ export function calculateMonthlyElectricity(input: ElectricityInput): Electricit
     expenseVnd: billVnd ?? estimatedVnd,
     differenceVnd,
     differencePercent:
-      differenceVnd === null || estimatedVnd === 0
+      differenceVnd === null
         ? null
-        : (differenceVnd / estimatedVnd) * 100,
+        : estimatedVnd === 0
+          ? billVnd === 0 ? 0 : null
+          : (differenceVnd / estimatedVnd) * 100,
   };
 }
 
@@ -262,9 +327,15 @@ export function calculateDailyExpenses(
   }
 
   incidentals.forEach((item, index) => assertVnd(item.amountVnd, `Incidental cost ${index + 1}`));
+  const monthlyAdjustment = monthlyCosts.adjustmentsVnd ?? 0;
+  assertSignedVnd(monthlyAdjustment, "Monthly adjustment");
+  const dailyAdjustment = allocateSignedMonthlyAmountByDay(monthlyAdjustment, month)[parseDate(date).day - 1]?.amountVnd ?? 0;
   const incidentalVnd = sumVnd(incidentals.map((item) => item.amountVnd));
   const knownAmounts = Object.values(daily).filter((amount): amount is number => amount !== null);
-  const totalVnd = missingCosts.length > 0 ? null : sumVnd([...knownAmounts, incidentalVnd]);
+  const knownDailyCost = sumVnd([...knownAmounts, incidentalVnd]);
+  const adjustedDailyCost = knownDailyCost + dailyAdjustment;
+  if (!Number.isSafeInteger(adjustedDailyCost)) throw new RangeError("Daily cost exceeds the safe integer range");
+  const totalVnd = missingCosts.length > 0 ? null : adjustedDailyCost;
 
   return {
     date,
@@ -272,6 +343,7 @@ export function calculateDailyExpenses(
     wagesVnd: daily.wages,
     waterVnd: daily.water,
     electricityVnd: daily.electricity,
+    adjustmentVnd: dailyAdjustment,
     incidentalVnd,
     totalVnd,
     missingCosts,
