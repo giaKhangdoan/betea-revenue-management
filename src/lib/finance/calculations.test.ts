@@ -4,6 +4,7 @@ import {
   allocateSignedMonthlyAmountByDay,
   calculateDailyExpenses,
   calculateDailyRevenue,
+  calculateDailyElectricityUsage,
   calculateMonthlyElectricity,
   calculateReconciliationDifferenceVnd,
   hasMeterResetWithinMonth,
@@ -34,6 +35,33 @@ describe("financial calculations", () => {
     expect(calculateReconciliationDifferenceVnd(1_050_000, 1_075_000)).toBe(-25_000);
     expect(calculateReconciliationDifferenceVnd(1_100_000, 1_075_000)).toBe(25_000);
     expect(calculateReconciliationDifferenceVnd(1_075_000, 1_075_000)).toBe(0);
+  });
+
+  it("splits daily electricity between trading hours and the overnight interval", () => {
+    expect(calculateDailyElectricityUsage({ morningKwh: 100, eveningKwh: 108.2, nextMorningKwh: 109.5 })).toEqual({
+      status: "complete",
+      shiftKwh: 8.2,
+      overnightKwh: 1.3,
+      fullDayKwh: 9.5,
+    });
+  });
+
+  it("shows available shift use while the next morning reading is still missing", () => {
+    expect(calculateDailyElectricityUsage({ morningKwh: 100, eveningKwh: 108, nextMorningKwh: null })).toEqual({
+      status: "missing_reading",
+      shiftKwh: 8,
+      overnightKwh: null,
+      fullDayKwh: null,
+    });
+  });
+
+  it("does not count a meter decrease as overnight electricity use", () => {
+    expect(calculateDailyElectricityUsage({ morningKwh: 100, eveningKwh: 108, nextMorningKwh: 107.5 })).toEqual({
+      status: "meter_decrease",
+      shiftKwh: 8,
+      overnightKwh: null,
+      fullDayKwh: null,
+    });
   });
 
   it("keeps a missing channel incomplete, while a closed day is known zero", () => {

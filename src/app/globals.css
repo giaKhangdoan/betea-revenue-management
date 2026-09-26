@@ -192,6 +192,9 @@ button { color: inherit; }
 .week-day-total.muted { color: var(--muted); font-size: 11px; font-weight: 450; }
 .week-day-sources { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .week-day-reconciliation { font-size: 10px; line-height: 1.4; font-weight: 600; }
+.week-day-reconciliation-reason { color: #6b4a4a; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.week-day-electricity { display: grid; gap: 2px; color: #405349; font-size: 10px; line-height: 1.35; }
+.week-day-electricity small { color: var(--muted); font-size: 9px; }
 .reconciliation-unreconciled, .reconciliation-pending { color: #725b29; }
 .reconciliation-matched { color: #3c684b; }
 .reconciliation-discrepancy { color: #923c3c; }
@@ -199,6 +202,12 @@ button { color: inherit; }
 .reconciliation-result > span { color: #33423a; font-size: 13px; font-weight: 560; }
 .reconciliation-result > strong { font-size: 18px; font-weight: 620; }
 .reconciliation-note { grid-column: 1 / -1; }
+.electricity-daily-summary { margin: 15px 0; border: 1px solid var(--line); border-radius: 7px; background: #fbfcfb; padding: 14px; }
+.electricity-daily-summary .section-heading { margin-bottom: 0; }
+.electricity-daily-summary .section-heading h3 { font-size: 13px; }
+.electricity-daily-summary .section-heading p { margin-top: 3px; }
+.electricity-daily-summary .electricity-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 0; }
+.electricity-daily-summary .form-note, .electricity-daily-summary .form-error { margin: 10px 0 0; }
 .week-footnote { margin: 13px 1px 0; }
 .week-revenue-chart { margin-bottom: 17px; border-bottom: 1px solid var(--line); padding: 2px 0 17px; }
 .week-chart-heading { margin-bottom: 9px; }
@@ -377,6 +386,7 @@ button { color: inherit; }
   .week-day-top { align-items: flex-start; }
   .week-day-top .status { max-width: 88px; white-space: normal; text-align: center; }
   .electricity-grid { grid-template-columns: 1fr 1fr; }
+  .electricity-daily-summary .electricity-grid { grid-template-columns: 1fr; }
   .photo-grid { grid-template-columns: 1fr; }
   .report-filter-form { display: grid; grid-template-columns: 1fr 1fr; }
   .report-filter-form > .button { grid-column: 1 / -1; }

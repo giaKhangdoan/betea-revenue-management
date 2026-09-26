@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { saveDailyRecord, type EntryActionState } from "@/app/(private)/ledger/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { formatVnd } from "@/lib/finance/format";
+import { calculateDailyElectricityUsage } from "@/lib/finance/calculations";
 
 type DailyRecord = {
   business_status?: string | null;
@@ -36,11 +37,13 @@ const fields = [
 const shiftFields = fields.slice(0, 4);
 const deliveryFields = fields.slice(4);
 
-export function DailyEntryForm({ date, record }: { date: string; record: DailyRecord | null }) {
+export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string; record: DailyRecord | null; nextMorningKwh: number | null }) {
   const [state, formAction, pending] = useActionState<EntryActionState, FormData>(saveDailyRecord, undefined);
   const [businessStatus, setBusinessStatus] = useState(record?.business_status ?? "open");
   const [reconciliationStatus, setReconciliationStatus] = useState(record?.reconciliation_status ?? "unreconciled");
   const [bluebookTotalValue, setBluebookTotalValue] = useState(record?.bluebook_total_vnd == null ? "" : new Intl.NumberFormat("vi-VN").format(record.bluebook_total_vnd));
+  const [morningMeterValue, setMorningMeterValue] = useState(record?.electricity_morning_kwh == null ? "" : String(record.electricity_morning_kwh));
+  const [eveningMeterValue, setEveningMeterValue] = useState(record?.electricity_evening_kwh == null ? "" : String(record.electricity_evening_kwh));
   const [salesValues, setSalesValues] = useState<Record<string, string>>(() => Object.fromEntries(
     fields.map((field) => [field.name, record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)]),
   ));
@@ -62,6 +65,13 @@ export function DailyEntryForm({ date, record }: { date: string; record: DailyRe
   const liveBluebookDifference = revenueIsComplete && parsedBluebookTotal !== null && Number.isSafeInteger(parsedBluebookTotal)
     ? parsedBluebookTotal - shownRevenue
     : null;
+  const parseMeter = (value: string) => value.trim() === "" ? null : Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+  const dailyElectricity = calculateDailyElectricityUsage({
+    morningKwh: parseMeter(morningMeterValue),
+    eveningKwh: parseMeter(eveningMeterValue),
+    nextMorningKwh,
+  });
+  const showKwh = (value: number | null) => value === null ? "Chưa đủ chỉ số" : `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(value)} kWh`;
 
   return (
     <form action={formAction} className="entry-form surface">
@@ -132,11 +142,20 @@ export function DailyEntryForm({ date, record }: { date: string; record: DailyRe
         </select>
       </div>
       <div className="entry-grid entry-support-grid">
-        <label className="field"><span>Chỉ số điện · ca sáng</span><span className="input-suffix"><input name="electricity_morning_kwh" type="number" min="0" step="0.001" inputMode="decimal" placeholder="Nhập số công tơ" defaultValue={record?.electricity_morning_kwh ?? ""} /><span>kWh</span></span></label>
-        <label className="field"><span>Chỉ số điện · ca tối</span><span className="input-suffix"><input name="electricity_evening_kwh" type="number" min="0" step="0.001" inputMode="decimal" placeholder="Nhập số công tơ" defaultValue={record?.electricity_evening_kwh ?? ""} /><span>kWh</span></span></label>
+        <label className="field"><span>Chỉ số điện · ca sáng</span><span className="input-suffix"><input name="electricity_morning_kwh" type="number" min="0" step="0.001" inputMode="decimal" placeholder="Nhập số công tơ" value={morningMeterValue} onChange={(event) => setMorningMeterValue(event.currentTarget.value)} /><span>kWh</span></span></label>
+        <label className="field"><span>Chỉ số điện · ca tối</span><span className="input-suffix"><input name="electricity_evening_kwh" type="number" min="0" step="0.001" inputMode="decimal" placeholder="Nhập số công tơ" value={eveningMeterValue} onChange={(event) => setEveningMeterValue(event.currentTarget.value)} /><span>kWh</span></span></label>
         <label className="field"><span>Đã vệ sinh</span><select name="cleaning_done" defaultValue={record?.cleaning_done == null ? "" : record.cleaning_done ? "yes" : "no"}><option value="">Chưa xác nhận</option><option value="yes">Đã vệ sinh</option><option value="no">Chưa vệ sinh</option></select></label>
         <label className="field"><span>Đã sắp xếp</span><select name="arrangement_done" defaultValue={record?.arrangement_done == null ? "" : record.arrangement_done ? "yes" : "no"}><option value="">Chưa xác nhận</option><option value="yes">Đã sắp xếp</option><option value="no">Chưa sắp xếp</option></select></label>
       </div>
+      <section className="electricity-daily-summary" aria-live="polite" aria-label="Tổng hợp điện trong ngày">
+        <div className="section-heading"><div><h3>Điện dùng trong ngày</h3><p>Hệ thống tính thêm phần thiết bị chạy qua đêm theo chỉ số sáng hôm sau.</p></div></div>
+        <div className="electricity-grid">
+          <div><span>Trong ca · sáng đến tối</span><strong>{showKwh(dailyElectricity.shiftKwh)}</strong></div>
+          <div><span>Qua đêm · tối đến sáng hôm sau</span><strong>{showKwh(dailyElectricity.overnightKwh)}</strong></div>
+          <div><span>Tổng 24 giờ · sáng nay đến sáng mai</span><strong>{showKwh(dailyElectricity.fullDayKwh)}</strong></div>
+        </div>
+        {dailyElectricity.status === "meter_decrease" ? <p className="form-error">Có chỉ số giảm giữa các lần ghi. Kiểm tra số công tơ hoặc lý do reset; phần giảm chưa được tính là điện tiêu thụ.</p> : dailyElectricity.overnightKwh === null ? <p className="form-note">Nhập chỉ số ca tối ngày này và chỉ số ca sáng ngày mai để xem đủ mức dùng 24 giờ.</p> : null}
+      </section>
       <label className="field"><span>Lý do nếu chỉ số điện giảm hoặc reset</span><input name="electricity_reset_reason" type="text" maxLength={240} placeholder="Chỉ cần nhập khi chỉ số thấp hơn lần ghi trước" defaultValue={record?.electricity_reset_reason ?? ""} /><small className="field-helper">Nếu công tơ được thay hoặc reset, hệ thống sẽ yêu cầu ghi lý do và không dùng phép trừ đơn giản để ước tính điện tháng đó.</small></label>
       <section className="reconciliation-section" aria-labelledby="reconciliation-heading">
         <div className="section-heading"><div><h3 id="reconciliation-heading">Đối soát với Bluebook</h3><p>Ghi riêng kết quả kiểm tra so với tổng doanh thu trên website.</p></div></div>
@@ -144,7 +163,7 @@ export function DailyEntryForm({ date, record }: { date: string; record: DailyRe
         {reconciliationStatus === "matched" || reconciliationStatus === "discrepancy" ? <div className="entry-grid reconciliation-detail-grid">
           <label className="field"><span>Tổng doanh thu Bluebook</span><span className="input-suffix"><input name="bluebook_total_vnd" type="text" inputMode="numeric" placeholder="Nhập tổng trên Bluebook" value={bluebookTotalValue} onChange={(event) => setBluebookTotalValue(event.currentTarget.value)} /><span>đ</span></span><small className="field-helper">Website tự lấy tổng bốn ca, Grab và Shopee để tính chênh lệch.</small></label>
           <div className="field reconciliation-result"><span>Chênh lệch · Bluebook trừ website</span><strong>{liveBluebookDifference === null ? "Cần nhập đủ doanh thu và tổng Bluebook" : `${liveBluebookDifference > 0 ? "+" : ""}${formatVnd(liveBluebookDifference)}`}</strong><small className="field-helper">{liveBluebookDifference === null ? "Không đánh dấu khớp/lệch khi số liệu còn thiếu." : liveBluebookDifference === 0 ? "Hai tổng đang khớp." : liveBluebookDifference > 0 ? "Bluebook cao hơn website." : "Bluebook thấp hơn website."}</small></div>
-          <label className="field reconciliation-note"><span>Ghi chú đối soát (không bắt buộc)</span><input name="reconciliation_note" type="text" maxLength={240} placeholder="Ví dụ: đã kiểm tra lại ca tối" defaultValue={record?.reconciliation_note ?? ""} /></label>
+          <label className="field reconciliation-note"><span>{reconciliationStatus === "discrepancy" ? "Lý do chênh lệch · bắt buộc" : "Ghi chú đối soát (không bắt buộc)"}</span><input name="reconciliation_note" type="text" maxLength={240} required={reconciliationStatus === "discrepancy"} placeholder={reconciliationStatus === "discrepancy" ? "Ví dụ: Bluebook thấp hơn do phí ship phát sinh" : "Ghi chú thêm nếu cần"} defaultValue={record?.reconciliation_note ?? ""} /></label>
         </div> : null}
       </section>
       <label className="field"><span>Ghi chú</span><textarea name="note" rows={2} maxLength={1000} placeholder="Ghi chú đối soát, chương trình hoặc diễn biến trong ngày" defaultValue={record?.note ?? ""} /></label>

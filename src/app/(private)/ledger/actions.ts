@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { calculateReconciliationDifferenceVnd } from "@/lib/finance/calculations";
-import { parseVnd } from "@/lib/finance/format";
+import { addDays, parseVnd } from "@/lib/finance/format";
 
 export type EntryActionState = { error?: string; success?: string } | undefined;
 
@@ -62,6 +62,9 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
     for (const field of revenueFields) values[field] = 0;
   }
   const isReconciled = reconciliationStatus === "matched" || reconciliationStatus === "discrepancy";
+  if (reconciliationStatus === "discrepancy" && (typeof reconciliationNote !== "string" || reconciliationNote.trim().length < 2)) {
+    return { error: "Khi đánh dấu lệch, hãy ghi lý do để tiện đối chiếu lại." };
+  }
   if (isReconciled && bluebookTotal === null) return { error: "Nhập tổng Bluebook trước khi đánh dấu khớp hoặc lệch." };
   if (isReconciled && status !== "no_business" && revenueFields.some((field) => values[field] === null)) {
     return { error: "Nhập đủ bốn ca, Grab và Shopee trước khi đối chiếu với Bluebook." };
@@ -148,6 +151,8 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
   revalidatePath("/");
   revalidatePath("/ledger");
   revalidatePath(`/ledger/${parsedDate.data}`);
+  revalidatePath(`/ledger/${addDays(parsedDate.data, -1)}`);
+  revalidatePath(`/ledger/${addDays(parsedDate.data, 1)}`);
   revalidatePath("/reports");
   return { success: "Đã lưu sổ ngày." };
 }

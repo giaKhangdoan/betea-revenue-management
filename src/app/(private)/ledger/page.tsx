@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, weekStart } from "@/lib/finance/format";
-import { calculateDailyRevenue } from "@/lib/finance/calculations";
+import { calculateDailyElectricityUsage, calculateDailyRevenue } from "@/lib/finance/calculations";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   if (queryDate !== undefined && queryDate !== selectedDate) redirect(`/ledger?date=${selectedDate}`);
 
   const { data } = await owner.supabase.from("daily_records").select("*")
-    .eq("owner_id", owner.ownerId).gte("business_date", visibleStart).lte("business_date", end).order("business_date");
+    .eq("owner_id", owner.ownerId).gte("business_date", visibleStart).lte("business_date", addDays(end, 1)).order("business_date");
   const records = new Map((data ?? []).map((item) => [item.business_date, item]));
   const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
   const weekDays = days.map((date) => {
@@ -39,7 +39,12 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
     const delivery = record ? Number(record.grab_vnd ?? 0) + Number(record.shopee_vnd ?? 0) : null;
     const reconciliation = record?.reconciliation_status ?? "unreconciled";
     const reconciliationLabel = reconciliation === "matched" ? "Bluebook: Khớp" : reconciliation === "discrepancy" ? "Bluebook: Lệch" : reconciliation === "pending" ? "Bluebook: Chờ kiểm tra" : "Bluebook: Chưa đối chiếu";
-    return { date, record, isBeforeStart, future, revenue, status, shifts, delivery, reconciliation, reconciliationLabel };
+    const electricity = calculateDailyElectricityUsage({
+      morningKwh: record?.electricity_morning_kwh == null ? null : Number(record.electricity_morning_kwh),
+      eveningKwh: record?.electricity_evening_kwh == null ? null : Number(record.electricity_evening_kwh),
+      nextMorningKwh: records.get(addDays(date, 1))?.electricity_morning_kwh == null ? null : Number(records.get(addDays(date, 1))!.electricity_morning_kwh),
+    });
+    return { date, record, isBeforeStart, future, revenue, status, shifts, delivery, reconciliation, reconciliationLabel, electricity };
   });
   const dueDays = weekDays.filter(({ date }) => date >= "2026-09-01" && date <= today);
   const totals = dueDays.map(({ record, revenue }) => !record || !revenue?.complete ? null : revenue.totalVnd);
@@ -87,14 +92,21 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
           </div>
         </section>
         <div className="week-grid">
-          {weekDays.map(({ date, record, isBeforeStart, future, revenue, status, shifts, delivery, reconciliation, reconciliationLabel }) => {
+          {weekDays.map(({ date, record, isBeforeStart, future, revenue, status, shifts, delivery, reconciliation, reconciliationLabel, electricity }) => {
+            const kwh = (value: number | null) => value === null ? "—" : `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(value)} kWh`;
+            const electricityLabel = electricity.status === "meter_decrease"
+              ? "Công tơ giảm · cần kiểm tra"
+              : electricity.fullDayKwh === null
+                ? electricity.shiftKwh === null ? "Chưa đủ chỉ số điện" : `Ca ${kwh(electricity.shiftKwh)} · chờ sáng mai`
+                : `24 giờ ${kwh(electricity.fullDayKwh)}`;
             return (
               <Link className={`week-day ${date === selectedDate ? "week-day-selected" : ""} ${isBeforeStart ? "week-day-muted" : ""}`} href={isBeforeStart ? `/ledger?date=${date}` : `/ledger/${date}`} key={date} aria-label={`${formatBusinessDate(date)}, ${status}`}>
                 <div className="week-day-top"><span>{formatBusinessDate(date, { weekday: "short" })}</span><span className={`status ${status === "Đã chốt" || status === "Đủ số liệu" ? "status-success" : status === "Còn thiếu" || status === "Chưa nhập" ? "status-warning" : "status-neutral"}`}>{status}</span></div>
                 <strong className="week-day-date">{formatBusinessDate(date, { day: "numeric", month: "short" })}</strong>
                 {isBeforeStart || future ? <span className="week-day-total">—</span> : record?.business_status === "no_business" ? <span className="week-day-total">0 ₫</span> : !revenue?.complete ? <span className="week-day-total muted">Chưa đủ dữ liệu</span> : <span className="week-day-total">{formatVnd(revenue.totalVnd)}</span>}
                 {record && !isBeforeStart && !future ? <span className="week-day-sources">Ca {formatVnd(shifts)} · G/S {formatVnd(delivery)}</span> : <span className="week-day-sources">Mở sổ ngày</span>}
-                {record && !isBeforeStart && !future ? <span className={`week-day-reconciliation reconciliation-${reconciliation}`}>{reconciliationLabel}</span> : null}
+                {record && !isBeforeStart && !future ? <span className="week-day-electricity" title={`Điện ca: ${kwh(electricity.shiftKwh)} · Qua đêm: ${kwh(electricity.overnightKwh)}`}>{electricityLabel}{electricity.fullDayKwh !== null ? <small>Ca {kwh(electricity.shiftKwh)} · đêm {kwh(electricity.overnightKwh)}</small> : null}</span> : null}
+                {record && !isBeforeStart && !future ? reconciliation === "discrepancy" ? <><span className={`week-day-reconciliation reconciliation-${reconciliation}`}>{record.reconciliation_difference_vnd == null ? reconciliationLabel : Number(record.reconciliation_difference_vnd) < 0 ? `Bluebook thiếu ${formatVnd(Math.abs(Number(record.reconciliation_difference_vnd)))}` : `Bluebook cao hơn ${formatVnd(Number(record.reconciliation_difference_vnd))}`}</span><span className="week-day-reconciliation-reason">{record.reconciliation_note ? `Lý do: ${record.reconciliation_note}` : "Chưa ghi lý do chênh lệch"}</span></> : <span className={`week-day-reconciliation reconciliation-${reconciliation}`}>{reconciliationLabel}</span> : null}
               </Link>
             );
           })}

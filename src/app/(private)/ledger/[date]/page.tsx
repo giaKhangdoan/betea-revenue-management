@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { DailyEntryForm } from "@/components/ledger/daily-entry-form";
 import { DailyExpenseForm } from "@/components/ledger/daily-expense-form";
 import { PhotoManager } from "@/components/ledger/photo-manager";
-import { formatBusinessDate, formatVnd } from "@/lib/finance/format";
+import { addDays, formatBusinessDate, formatVnd } from "@/lib/finance/format";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +15,9 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
   const owner = await requireOwnerClient();
   if (!owner) redirect("/login");
 
-  const [dayResult, expensesResult, photosResult] = await Promise.all([
+  const [dayResult, nextDayResult, expensesResult, photosResult] = await Promise.all([
     owner.supabase.from("daily_records").select("*").eq("owner_id", owner.ownerId).eq("business_date", date).maybeSingle(),
+    owner.supabase.from("daily_records").select("electricity_morning_kwh").eq("owner_id", owner.ownerId).eq("business_date", addDays(date, 1)).maybeSingle(),
     owner.supabase.from("daily_expenses").select("id,amount_vnd,reason,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
     owner.supabase.from("day_photos").select("id,category,shift_code,object_path,caption,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
   ]);
@@ -36,7 +37,7 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
       </div>
       <div className="day-layout">
         <div className="day-primary">
-          <DailyEntryForm date={date} record={record} />
+          <DailyEntryForm date={date} record={record} nextMorningKwh={nextDayResult.data?.electricity_morning_kwh == null ? null : Number(nextDayResult.data.electricity_morning_kwh)} />
           <DailyExpenseForm date={date} />
           <section className="surface table-card">
             <div className="section-heading"><div><h2>Chi phí đã ghi</h2><p>{expenses.length} khoản trong ngày</p></div><strong>{formatVnd(totalExpense)}</strong></div>

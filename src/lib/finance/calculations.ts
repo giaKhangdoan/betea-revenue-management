@@ -44,6 +44,13 @@ export type ElectricityCalculation = {
   differencePercent: number | null;
 };
 
+export type DailyElectricityUsage = {
+  status: "complete" | "missing_reading" | "meter_decrease";
+  shiftKwh: number | null;
+  overnightKwh: number | null;
+  fullDayKwh: number | null;
+};
+
 export type MonthlyCostInput = {
   month: MonthKey;
   rentVnd: VndAmount | null;
@@ -178,6 +185,45 @@ export function calculateReconciliationDifferenceVnd(bluebookTotalVnd: VndAmount
   const difference = bluebookTotalVnd - websiteTotalVnd;
   if (!Number.isSafeInteger(difference)) throw new RangeError("Reconciliation difference exceeds the safe integer range");
   return difference;
+}
+
+/** Splits meter use during operating hours and overnight, using the next morning's reading. */
+export function calculateDailyElectricityUsage(input: {
+  morningKwh: number | null;
+  eveningKwh: number | null;
+  nextMorningKwh: number | null;
+}): DailyElectricityUsage {
+  for (const [label, value] of [
+    ["Morning meter", input.morningKwh],
+    ["Evening meter", input.eveningKwh],
+    ["Next morning meter", input.nextMorningKwh],
+  ] as const) {
+    if (value !== null && (!Number.isFinite(value) || value < 0)) {
+      throw new RangeError(`${label} must be a non-negative meter reading`);
+    }
+  }
+
+  const decreasedDuringShift = input.morningKwh !== null && input.eveningKwh !== null && input.eveningKwh < input.morningKwh;
+  const decreasedOvernight = input.eveningKwh !== null && input.nextMorningKwh !== null && input.nextMorningKwh < input.eveningKwh;
+  const decreasedAcrossDay = input.morningKwh !== null && input.nextMorningKwh !== null && input.nextMorningKwh < input.morningKwh;
+  const roundKwh = (value: number) => Number(value.toFixed(3));
+
+  return {
+    status: decreasedDuringShift || decreasedOvernight || decreasedAcrossDay
+      ? "meter_decrease"
+      : input.morningKwh === null || input.eveningKwh === null || input.nextMorningKwh === null
+        ? "missing_reading"
+        : "complete",
+    shiftKwh: input.morningKwh === null || input.eveningKwh === null || decreasedDuringShift
+      ? null
+      : roundKwh(input.eveningKwh - input.morningKwh),
+    overnightKwh: input.eveningKwh === null || input.nextMorningKwh === null || decreasedOvernight
+      ? null
+      : roundKwh(input.nextMorningKwh - input.eveningKwh),
+    fullDayKwh: input.morningKwh === null || input.nextMorningKwh === null || decreasedAcrossDay || decreasedDuringShift || decreasedOvernight
+      ? null
+      : roundKwh(input.nextMorningKwh - input.morningKwh),
+  };
 }
 
 export function weekRangeContaining(date: DateOnly): { startDate: DateOnly; endDate: DateOnly } {
