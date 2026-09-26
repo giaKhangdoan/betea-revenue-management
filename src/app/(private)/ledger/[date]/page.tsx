@@ -37,7 +37,7 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
       </div>
       <div className="day-layout">
         <div className="day-primary">
-          <DailyEntryForm date={date} record={record} nextMorningKwh={nextDayResult.data?.electricity_morning_kwh == null ? null : Number(nextDayResult.data.electricity_morning_kwh)} />
+          <DailyEntryForm key={date} date={date} record={record} nextMorningKwh={nextDayResult.data?.electricity_morning_kwh == null ? null : Number(nextDayResult.data.electricity_morning_kwh)} />
           <DailyExpenseForm date={date} />
           <section className="surface table-card">
             <div className="section-heading"><div><h2>Chi phí đã ghi</h2><p>{expenses.length} khoản trong ngày</p></div><strong>{formatVnd(totalExpense)}</strong></div>
