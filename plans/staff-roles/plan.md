@@ -3,7 +3,7 @@
 Ngày: 26/09/2026  
 Mode: Hard  
 Risk: high-risk — thay đổi xác thực, RLS, schema tài chính, Storage riêng tư và luồng cấp tài khoản.  
-Trạng thái: Phase 01–05 đã triển khai và kiểm chứng trên local; các migration staff đã áp dụng production tới `staff_policy_hardening`. Chưa tạo membership staff production và chưa deploy app thay đổi trong lượt này.
+Trạng thái: Phase 01–05 đã triển khai và kiểm chứng trên local; các migration staff đã áp dụng production tới `staff_policy_hardening`; ứng dụng đã được push lên `main` và deploy production. Chưa tạo membership staff production vì chưa cần cấp tài khoản thật.
 
 ## Scope challenge
 
@@ -86,21 +86,21 @@ Staff chỉ thấy dòng doanh thu theo từng ngày từ Thứ 2 đến Chủ n
 
 ## Handoff checklist
 
-- [ ] Hoàn thành từng phase theo thứ tự; không bật membership staff production trước khi kiểm tra RLS/Storage.
-- [ ] Trước khi bật staff production, đặt `SUPABASE_SERVICE_ROLE_KEY` ở Vercel server-side và tắt public signup trong Supabase Auth General; giữ Email/Password sign-in bật.
-- [ ] Cập nhật `feature_list.json` theo đúng phase IDs trong file này.
-- [ ] Sau triển khai, xác minh app build/typecheck/lint và ma trận quyền; thực hiện release production sau khi owner review.
+- [x] Hoàn thành từng phase theo thứ tự; không bật membership staff production trước khi kiểm tra RLS/Storage.
+- [x] Đặt `SUPABASE_SERVICE_ROLE_KEY` ở Vercel server-side; public signup vẫn tắt và Email/Password sign-in vẫn bật.
+- [x] Cập nhật `feature_list.json` theo đúng phase IDs trong file này.
+- [x] Xác minh app build/typecheck/lint, ma trận quyền, migration production và release production.
 
 ## Session Notes
 <!-- Updated by cook automatically — do not edit manually -->
 
 **Last active:** 2026-09-27 01:15 Asia/Ho_Chi_Minh
-**Phase in progress:** phase-05-security-rollout
-**Status:** Phase 03–05 đã hoàn tất; local Supabase reset/pgTAP/advisors và production migration/advisors đã kiểm tra. App build/lint/typecheck/test pass; chờ commit/deploy smoke.
+**Phase in progress:** none — phase-01 through phase-05 complete
+**Status:** Phase 01–05 đã hoàn tất; local Supabase reset/pgTAP/advisors và production migration/advisors đã kiểm tra. App build/lint/typecheck/test pass; `main` đã push và Vercel production đã Ready. `SUPABASE_SERVICE_ROLE_KEY` đã được cấu hình dạng Secret ở Production; chưa tạo membership staff thật.
 
 ### Decisions made this session
 - Giữ `daily_records` làm nguồn doanh thu; chuyển trường admin sang side table trước khi cấp staff.
-- Không áp dụng migration hoặc thay đổi project Supabase production trong phiên này.
+- Các migration staff đã được áp dụng tuần tự vào project Supabase production và kiểm tra lại danh sách migration.
 - Owner lưu sổ ngày qua RPC allowlist để hai bảng cập nhật trong cùng transaction; các báo cáo đã lọc chi phí phát sinh bị xóa mềm.
 - Supabase connector truy cập được project Betea theo ID; người dùng từ chối nhánh có phí nên dùng Supabase CLI/Docker local để kiểm chứng mà không tạo nhánh hoặc chạm production.
 - Backfill giữ nguyên doanh thu 1.205.000đ và các trường admin của dòng mẫu; kiểm tra RLS xác nhận staff không đọc tuần cũ, chi phí tháng hoặc admin details, không sửa ngày cũ/hard delete, và mất quyền ngay khi membership inactive.
@@ -111,4 +111,4 @@ Staff chỉ thấy dòng doanh thu theo từng ngày từ Thứ 2 đến Chủ n
 - Phase 05: thêm hardening policy/index migration, pgTAP role boundary test và backup/owner access runbook. Production đã áp migration staff tới `staff_policy_hardening`; chưa cấp staff membership production.
 
 ### Next immediate action
-Hoàn thiện và kiểm chứng Phase 02 trên Supabase local, chạy tester/reviewer theo Cook Hard, rồi chờ owner review trước khi bắt đầu Phase 03.
+Khi chủ cửa hàng sẵn sàng, mở **Tài khoản nhân viên** để cấp một tài khoản dùng chung; không tạo membership hoặc dữ liệu thử trong production trước khi có yêu cầu vận hành thật.
