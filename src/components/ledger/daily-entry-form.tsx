@@ -75,7 +75,21 @@ export function DailyEntryForm({ date, record }: { date: string; record: DailyRe
           {shiftFields.map((field) => (
             <label className="field" key={field.name}>
               <span>{field.label}</span>
-              <span className="input-suffix"><input name={field.name} type="text" inputMode="numeric" placeholder="Ví dụ: 1.250.000" defaultValue={record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)} onChange={(event) => setSalesValues((current) => ({ ...current, [field.name]: event.currentTarget.value }))} aria-label={`${field.label}, đơn vị đồng`} /><span>đ</span></span>
+              <span className="input-suffix">
+                <input
+                  name={field.name}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ví dụ: 1.250.000"
+                  defaultValue={record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setSalesValues((current) => ({ ...current, [field.name]: value }));
+                  }}
+                  aria-label={`${field.label}, đơn vị đồng`}
+                />
+                <span>đ</span>
+              </span>
             </label>
           ))}
         </div>
@@ -86,7 +100,21 @@ export function DailyEntryForm({ date, record }: { date: string; record: DailyRe
           {deliveryFields.map((field) => (
             <label className="field" key={field.name}>
               <span>{field.label}</span>
-              <span className="input-suffix"><input name={field.name} type="text" inputMode="numeric" placeholder="Ví dụ: 1.250.000" defaultValue={record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)} onChange={(event) => setSalesValues((current) => ({ ...current, [field.name]: event.currentTarget.value }))} aria-label={`${field.label}, đơn vị đồng`} /><span>đ</span></span>
+              <span className="input-suffix">
+                <input
+                  name={field.name}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ví dụ: 1.250.000"
+                  defaultValue={record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setSalesValues((current) => ({ ...current, [field.name]: value }));
+                  }}
+                  aria-label={`${field.label}, đơn vị đồng`}
+                />
+                <span>đ</span>
+              </span>
             </label>
           ))}
         </div>
