@@ -67,9 +67,10 @@ export async function saveStaffEntryAction(
     success = "Đã xóa mềm doanh thu ca. Chủ cửa hàng vẫn xem được lịch sử.";
   } else if (kind === "platform_revenue") {
     const channel = textValue(formData, "channel");
-    const amount = parseVnd(formData.get("amount_vnd"));
+    const amountText = textValue(formData, "amount_vnd");
+    const amount = amountText === "" ? 0 : parseVnd(formData.get("amount_vnd"));
     if (!channels.includes(channel as (typeof channels)[number]) || amount === null || Number.isNaN(amount) || amount < 0) {
-      return { error: "Nhập kênh và doanh thu giao hàng là số nguyên không âm." };
+      return { error: "Nhập doanh thu giao hàng là số nguyên không âm; để trống nếu kênh không phát sinh." };
     }
     ({ error } = await staff.supabase.rpc("staff_save_platform_revenue", {
       p_business_date: date.data,

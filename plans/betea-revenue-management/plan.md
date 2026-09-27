@@ -27,7 +27,7 @@ Spec quản lý thu chi đã khóa theo câu trả lời của chủ cửa hàng
 
 ## Bất biến tài chính
 
-1. Doanh thu ngày là tổng bốn ca + Grab + Shopee; Grab/Shopee được nhập tổng theo ngày, tách ngoài bốn ca rồi cộng vào tổng ngày.
+1. Doanh thu ngày là tổng bốn ca + Grab + Shopee; Grab/Shopee được nhập tổng theo ngày, tách ngoài bốn ca rồi cộng vào tổng ngày. Kênh không phát sinh có thể để trống và được tính 0.
 2. Thiếu dữ liệu khác số 0. Mỗi ngày có trạng thái đang nhập, đã chốt hoặc không kinh doanh; báo cáo đánh dấu incomplete khi thiếu ngày hoặc đầu vào bắt buộc. Không hiện lợi nhuận/variance như số đầy đủ nếu dữ liệu chưa đủ.
 3. Tách trạng thái chốt ngày, đối soát doanh thu và checklist vệ sinh/sắp xếp. Tuần là Thứ 2–Chủ nhật.
 4. COGS nhập một tổng tháng từ POS, không chia ngày. Tuần/khoảng ngày hiển thị lợi nhuận trước COGS; tháng/năm trừ COGS theo từng tháng.

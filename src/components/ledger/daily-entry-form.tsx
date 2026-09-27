@@ -55,7 +55,7 @@ export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string;
     const value = Number(normalized);
     return Number.isSafeInteger(value) ? value : null;
   });
-  const missingSales = parsedSales.filter((value) => value === null).length;
+  const missingSales = parsedSales.slice(0, shiftFields.length).filter((value) => value === null).length;
   const partialRevenue = parsedSales.reduce<number>((sum, value) => sum + (value ?? 0), 0);
   const revenueIsComplete = businessStatus === "no_business" || missingSales === 0;
   const shownRevenue = businessStatus === "no_business" ? 0 : partialRevenue;
@@ -76,7 +76,7 @@ export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string;
   return (
     <form action={formAction} className="entry-form surface">
       <div className="section-heading">
-        <div><h2>Doanh thu trong ngày</h2><p>Nhập doanh thu cuối cùng của từng ca và hai kênh giao hàng.</p></div>
+        <div><h2>Doanh thu trong ngày</h2><p>Nhập doanh thu cuối cùng của bốn ca; Grab/Shopee chỉ nhập khi có phát sinh.</p></div>
       </div>
       <input type="hidden" name="business_date" value={date} />
       <div className="entry-field-group">
@@ -125,19 +125,20 @@ export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string;
                 />
                 <span>đ</span>
               </span>
+              <small className="field-helper">Không phát sinh thì để trống · hệ thống tính 0 ₫.</small>
             </label>
           ))}
         </div>
       </div>
       <div className="daily-total" aria-live="polite">
         <div><span>{revenueIsComplete ? "Tổng doanh thu ngày" : "Tổng tạm tính · các khoản đã nhập"}</span><strong>{formatVnd(shownRevenue)}</strong></div>
-        <small>{businessStatus === "no_business" ? "Ngày không kinh doanh được ghi nhận là 0 ₫." : revenueIsComplete ? "Tổng gồm bốn ca, Grab và Shopee." : `Còn thiếu ${missingSales} trong 6 khoản; tổng ngày sẽ hoàn chỉnh khi nhập đủ.`}</small>
+        <small>{businessStatus === "no_business" ? "Ngày không kinh doanh được ghi nhận là 0 ₫." : revenueIsComplete ? "Tổng gồm bốn ca và các kênh giao hàng có phát sinh; kênh để trống tính 0." : `Còn thiếu ${missingSales} ca; Grab/Shopee không phát sinh có thể để trống.`}</small>
       </div>
       <div className="field status-field">
         <label htmlFor="business_status">Trạng thái ngày</label>
         <select id="business_status" name="business_status" value={businessStatus} onChange={(event) => setBusinessStatus(event.currentTarget.value)}>
           <option value="open">Đang nhập</option>
-          <option value="closed">Đã chốt · cần đủ 6 khoản doanh thu</option>
+          <option value="closed">Đã chốt · cần đủ 4 ca</option>
           <option value="no_business">Không kinh doanh · doanh thu bằng 0</option>
         </select>
       </div>
@@ -159,15 +160,15 @@ export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string;
       <label className="field"><span>Lý do nếu chỉ số điện giảm hoặc reset</span><input name="electricity_reset_reason" type="text" maxLength={240} placeholder="Chỉ cần nhập khi chỉ số thấp hơn lần ghi trước" defaultValue={record?.electricity_reset_reason ?? ""} /><small className="field-helper">Nếu công tơ được thay hoặc reset, hệ thống sẽ yêu cầu ghi lý do và không dùng phép trừ đơn giản để ước tính điện tháng đó.</small></label>
       <section className="reconciliation-section" aria-labelledby="reconciliation-heading">
         <div className="section-heading"><div><h3 id="reconciliation-heading">Đối soát với Bluebook</h3><p>Ghi riêng kết quả kiểm tra so với tổng doanh thu trên website.</p></div></div>
-        <label className="field"><span>Trạng thái đối soát</span><select name="reconciliation_status" value={reconciliationStatus} onChange={(event) => setReconciliationStatus(event.currentTarget.value)}><option value="unreconciled">Chưa đối chiếu</option><option value="pending">Chờ kiểm tra</option><option value="matched">Khớp</option><option value="discrepancy">Lệch</option></select></label>
+          <label className="field"><span>Trạng thái đối soát</span><select name="reconciliation_status" value={reconciliationStatus} onChange={(event) => setReconciliationStatus(event.currentTarget.value)}><option value="unreconciled">Chưa đối chiếu</option><option value="pending">Chờ kiểm tra</option><option value="matched">Khớp</option><option value="discrepancy">Lệch</option></select></label>
         {reconciliationStatus === "matched" || reconciliationStatus === "discrepancy" ? <div className="entry-grid reconciliation-detail-grid">
-          <label className="field"><span>Tổng doanh thu Bluebook</span><span className="input-suffix"><input name="bluebook_total_vnd" type="text" inputMode="numeric" placeholder="Nhập tổng trên Bluebook" value={bluebookTotalValue} onChange={(event) => setBluebookTotalValue(event.currentTarget.value)} /><span>đ</span></span><small className="field-helper">Website tự lấy tổng bốn ca, Grab và Shopee để tính chênh lệch.</small></label>
-          <div className="field reconciliation-result"><span>Chênh lệch · Bluebook trừ website</span><strong>{liveBluebookDifference === null ? "Cần nhập đủ doanh thu và tổng Bluebook" : `${liveBluebookDifference > 0 ? "+" : ""}${formatVnd(liveBluebookDifference)}`}</strong><small className="field-helper">{liveBluebookDifference === null ? "Không đánh dấu khớp/lệch khi số liệu còn thiếu." : liveBluebookDifference === 0 ? "Hai tổng đang khớp." : liveBluebookDifference > 0 ? "Bluebook cao hơn website." : "Bluebook thấp hơn website."}</small></div>
+          <label className="field"><span>Tổng doanh thu Bluebook</span><span className="input-suffix"><input name="bluebook_total_vnd" type="text" inputMode="numeric" placeholder="Nhập tổng trên Bluebook" value={bluebookTotalValue} onChange={(event) => setBluebookTotalValue(event.currentTarget.value)} /><span>đ</span></span><small className="field-helper">Website tự lấy tổng bốn ca và kênh có phát sinh; Grab/Shopee trống tính 0.</small></label>
+          <div className="field reconciliation-result"><span>Chênh lệch · Bluebook trừ website</span><strong>{liveBluebookDifference === null ? "Cần nhập đủ 4 ca và tổng Bluebook" : `${liveBluebookDifference > 0 ? "+" : ""}${formatVnd(liveBluebookDifference)}`}</strong><small className="field-helper">{liveBluebookDifference === null ? "Không đánh dấu khớp/lệch khi còn thiếu ca hoặc tổng Bluebook." : liveBluebookDifference === 0 ? "Hai tổng đang khớp." : liveBluebookDifference > 0 ? "Bluebook cao hơn website." : "Bluebook thấp hơn website."}</small></div>
           <label className="field reconciliation-note"><span>{reconciliationStatus === "discrepancy" ? "Lý do chênh lệch · bắt buộc" : "Ghi chú đối soát (không bắt buộc)"}</span><input name="reconciliation_note" type="text" maxLength={240} required={reconciliationStatus === "discrepancy"} placeholder={reconciliationStatus === "discrepancy" ? "Ví dụ: Bluebook thấp hơn do phí ship phát sinh" : "Ghi chú thêm nếu cần"} defaultValue={record?.reconciliation_note ?? ""} /></label>
         </div> : null}
       </section>
       <label className="field"><span>Ghi chú</span><textarea name="note" rows={2} maxLength={1000} placeholder="Ghi chú đối soát, chương trình hoặc diễn biến trong ngày" defaultValue={record?.note ?? ""} /></label>
-      <p className="form-note">Các khoản được lưu riêng để dễ đối chiếu. Ngày chưa nhập đủ sẽ không bị tính thành 0.</p>
+      <p className="form-note">Bốn ca phải được nhập riêng. Grab/Shopee không phát sinh có thể để trống và được tính 0; ngày chưa đủ ca vẫn không bị tính thành 0.</p>
       <ActionMessage error={state?.error} success={state?.success} />
       <div className="form-actions"><button className="button" type="submit" disabled={pending}>{pending ? "Đang lưu…" : "Lưu doanh thu ngày"}</button></div>
     </form>

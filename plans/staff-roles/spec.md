@@ -23,7 +23,7 @@ Chủ cửa hàng cần cho nhân viên nhập doanh thu và thông tin vận h�
   Accepted when: bill count is a non-negative integer entered manually once at day end and includes all orders from the counter, Grab, and Shopee; it is never inferred from revenue or platform counts.
 
 - **[US-04] [P1]** As a staff member, I want to record Grab and Shopee revenue and orders at the end of the day, while being able to add orders during the day or enter the final order count, so that online orders are captured without losing the closing total.
-  Accepted when: each platform has a revenue amount entered/updated at day close and an order count that supports both `+N` and direct final-count entry; the two entry modes update the same count; the separately entered total bill count includes counter, Grab, and Shopee orders and is manually entered on this site at day end for reconciliation, not calculated by adding platform counters.
+  Accepted when: each platform accepts a revenue amount when it has sales and may remain blank when it has no sales (blank is treated as 0); an order count supports both `+N` and direct final-count entry; the two entry modes update the same count; the separately entered total bill count includes counter, Grab, and Shopee orders and is manually entered on this site at day end for reconciliation, not calculated by adding platform counters.
 
 - **[US-05] [P1]** As a staff member, I want to enter morning/evening meter readings and add dated incidental expenses with a reason so that the daily ledger is complete.
   Accepted when: meter readings are stored as kWh readings, not bill amounts; every incidental expense has a positive amount and a reason; staff may manage only records inside the allowed write window.
@@ -73,7 +73,7 @@ Chủ cửa hàng cần cho nhân viên nhập doanh thu và thông tin vận h�
 ## Success Criteria
 
 - [ ] A staff user can save each of the four shift submissions separately; the saved amount for one shift does not alter the other three.
-- [ ] Staff can enter or update Grab/Shopee revenue at day close, increment platform orders or enter a final count, and manually enter a total bill count that includes counter, Grab, and Shopee orders while keeping platform counts as separate breakdowns.
+- [ ] Staff can enter or update Grab/Shopee revenue at day close, leave a channel blank when it has no sales, increment platform orders or enter a final count, and manually enter a total bill count that includes counter, Grab, and Shopee orders while keeping platform counts as separate breakdowns.
 - [ ] The staff dashboard shows daily revenue for the current Monday–Sunday week with no weekly/monthly aggregate or profit.
 - [ ] Staff manually enter the all-channel total bill count at day end for reconciliation and cannot access profit, monthly costs, electricity calculations, reconciliation, or cleaning/arrangement fields via UI or direct API.
 - [ ] Staff can view daily entries only for the current Monday–Sunday week; attempts to open another week or write a past date are rejected.
@@ -97,7 +97,7 @@ Chủ cửa hàng cần cho nhân viên nhập doanh thu và thông tin vận h�
 - “Hết ngày” means the end of the business date at 00:00 Vietnam time; admin may edit at any time.
 - The staff dashboard shows each date from Monday through Sunday of the current week and that day's revenue only; it shows no weekly/monthly aggregate or profit.
 - When staff access is enabled, staff can see safe figures already entered for the current week; dates before today are read-only.
-- Grab/Shopee revenue is recorded at day close. Their order counts can be incremented during the day or entered as the final count. The daily total bill count is entered manually and includes counter, Grab, and Shopee orders; platform counts are separate breakdowns, not inputs to an automatic sum.
+- Grab/Shopee revenue is recorded at day close. A channel with no sales may stay blank and contributes zero; a channel with sales receives its total. Their order counts can be incremented during the day or entered as the final count. The daily total bill count is entered manually and includes counter, Grab, and Shopee orders; platform counts are separate breakdowns, not inputs to an automatic sum.
 - Because the staff credential is shared, every staff member using it has the same fixed staff permissions and can create/update/soft-delete current-day staff entries before the cutoff; only admin can edit past days.
 - Staff may enter raw meter readings only. Admin reviews daily usage and overnight differences and owns electricity cost calculations.
 - Existing monthly electricity cost formula and private image-storage bucket remain admin-controlled.

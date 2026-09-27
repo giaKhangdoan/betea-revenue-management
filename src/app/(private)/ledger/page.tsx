@@ -64,7 +64,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
       <section className="summary-strip surface" aria-label="Tổng hợp tuần">
         <div><span>Doanh thu các ngày đã đủ dữ liệu</span><strong>{formatVnd(completedRevenue)}</strong></div>
         <div><span>Ngày chưa đủ dữ liệu</span><strong>{incompleteCount} / {dueDays.length}</strong></div>
-        <p>Tổng ngày cộng bốn ca với Grab và Shopee. Ngày chưa nhập đủ được đánh dấu riêng, không tính thành 0.</p>
+        <p>Tổng ngày cộng bốn ca với các kênh giao hàng có phát sinh. Grab/Shopee để trống được tính 0; ngày chưa đủ ca vẫn được đánh dấu riêng.</p>
       </section>
       <section className="surface week-card">
         <div className="week-toolbar">

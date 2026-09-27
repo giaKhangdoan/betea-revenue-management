@@ -7,7 +7,7 @@ Nhân viên nhập nhanh số liệu của ngày hiện tại; DB/server chặn 
 ## Phạm vi và công việc cụ thể
 
 1. Tạo form staff ưu tiên mobile: bốn thẻ ca 06–10, 10–14, 14–18, 18–22; mỗi ca nhập một số doanh thu tổng và lưu riêng để không ghi đè ca khác.
-2. Tạo phần Grab/Shopee nhập doanh thu cuối ngày; số đơn có nút cộng thêm và ô nhập số chốt cuối ngày. `+N` là thao tác DB atomic; số chốt thay thế count cùng kênh.
+2. Tạo phần Grab/Shopee nhập doanh thu cuối ngày; nếu một kênh không phát sinh, nhân viên được để trống và hệ thống lưu/tính 0. Số đơn có nút cộng thêm và ô nhập số chốt cuối ngày. `+N` là thao tác DB atomic; số chốt thay thế count cùng kênh.
 3. Nhập tổng bill thủ công cuối ngày cho toàn bộ kênh quầy + Grab + Shopee để đối chiếu. Không derive bill count từ doanh thu hoặc cộng platform counters.
 4. Cho nhập chỉ số điện sáng/tối thô, không render usage/overnight delta/đơn giá/bill điện cho staff. Cho thêm, sửa, xóa mềm chi phí phát sinh của hôm nay với lý do bắt buộc.
 5. Server Action từng thao tác tự gọi role guard, parse/validate bằng schema, lấy owner/store từ membership; không tin owner ID/date/role do client gửi.

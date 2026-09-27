@@ -168,11 +168,14 @@ export function calculateDailyRevenue(input: DailyRevenueInput): DailyRevenueRes
     ["grab", input.grabSalesVnd],
     ["shopee", input.shopeeSalesVnd],
   ] as const) {
-    if (amount === null) missingFields.push(field);
-    else {
-      assertVnd(amount, field);
-      values.push(amount);
+    // Delivery channels are optional. An empty channel means there were no
+    // orders and contributes zero; the four in-store shifts remain required.
+    if (amount === null) {
+      values.push(0);
+      continue;
     }
+    assertVnd(amount, field);
+    values.push(amount);
   }
 
   if (missingFields.length > 0) return { complete: false, totalVnd: null, missingFields };

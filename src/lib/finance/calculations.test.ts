@@ -64,10 +64,14 @@ describe("financial calculations", () => {
     });
   });
 
-  it("keeps a missing channel incomplete, while a closed day is known zero", () => {
+  it("treats an absent delivery channel as zero, while a closed day is known zero", () => {
     expect(
       calculateDailyRevenue({ ...completeOpenDay, grabSalesVnd: null }),
-    ).toEqual({ complete: false, totalVnd: null, missingFields: ["grab"] });
+    ).toEqual({ complete: true, totalVnd: 1_025_000, missingFields: [] });
+
+    expect(
+      calculateDailyRevenue({ ...completeOpenDay, grabSalesVnd: 50_000, shopeeSalesVnd: null }),
+    ).toEqual({ complete: true, totalVnd: 1_050_000, missingFields: [] });
 
     expect(
       calculateDailyRevenue({

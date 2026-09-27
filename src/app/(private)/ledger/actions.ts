@@ -13,6 +13,10 @@ const dateSchema = z.iso.date().refine((date) => date >= "2026-09-01", "Sổ b�
 const revenueFields = [
   "shift_06_10_vnd", "shift_10_14_vnd", "shift_14_18_vnd", "shift_18_22_vnd", "grab_vnd", "shopee_vnd",
 ] as const;
+const shiftRevenueFields = [
+  "shift_06_10_vnd", "shift_10_14_vnd", "shift_14_18_vnd", "shift_18_22_vnd",
+] as const;
+const deliveryRevenueFields = ["grab_vnd", "shopee_vnd"] as const;
 
 function parseMeterValue(value: unknown): number | null {
   if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") return null;
@@ -56,8 +60,11 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
 
   const values = Object.fromEntries(revenueFields.map((field) => [field, parseVnd(formData.get(field))])) as Record<typeof revenueFields[number], number | null>;
   if (revenueFields.some((field) => Number.isNaN(values[field]))) return { error: "Số tiền cần là số nguyên không âm. Ví dụ: 1.250.000." };
-  if (status === "closed" && revenueFields.some((field) => values[field] === null)) {
-    return { error: "Muốn chốt ngày, hãy nhập đủ bốn ca, Grab và Shopee. Nếu nghỉ, chọn ‘Không kinh doanh’." };
+  if (status !== "no_business") {
+    for (const field of deliveryRevenueFields) values[field] ??= 0;
+  }
+  if (status === "closed" && shiftRevenueFields.some((field) => values[field] === null)) {
+    return { error: "Muốn chốt ngày, hãy nhập đủ bốn ca. Grab/Shopee không phát sinh có thể để trống." };
   }
   if (status === "no_business") {
     for (const field of revenueFields) values[field] = 0;
@@ -67,8 +74,8 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
     return { error: "Khi đánh dấu lệch, hãy ghi lý do để tiện đối chiếu lại." };
   }
   if (isReconciled && bluebookTotal === null) return { error: "Nhập tổng Bluebook trước khi đánh dấu khớp hoặc lệch." };
-  if (isReconciled && status !== "no_business" && revenueFields.some((field) => values[field] === null)) {
-    return { error: "Nhập đủ bốn ca, Grab và Shopee trước khi đối chiếu với Bluebook." };
+  if (isReconciled && status !== "no_business" && shiftRevenueFields.some((field) => values[field] === null)) {
+    return { error: "Nhập đủ bốn ca trước khi đối chiếu với Bluebook. Grab/Shopee để trống được tính 0." };
   }
   const websiteDailyTotal = status === "no_business" ? 0 : revenueFields.reduce((sum, field) => sum + (values[field] ?? 0), 0);
   const reconciliationDifference = isReconciled && bluebookTotal !== null

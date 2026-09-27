@@ -15,7 +15,7 @@
     "status": "active",
     "evidence": "",
     "user_visible_behavior": "Nhập doanh thu bốn ca, Grab/Shopee theo ngày, chi phí phát sinh và trạng thái ngày.",
-    "verification_command": "Kiểm tra thủ công: tổng ngày bằng bốn ca cộng Grab/Shopee; ngày nghỉ được tính 0 và đầy đủ; ngày còn thiếu khác 0 đồng; chi phí phát sinh cần ngày, số tiền và lý do.",
+    "verification_command": "Kiểm tra thủ công: tổng ngày bằng bốn ca cộng Grab/Shopee có phát sinh (kênh để trống tính 0); ngày nghỉ được tính 0 và đầy đủ; ngày còn thiếu ca khác 0 đồng; chi phí phát sinh cần ngày, số tiền và lý do.",
     "notes": "Covers stories: US-03, US-04, US-08",
     "priority": "P1"
   },

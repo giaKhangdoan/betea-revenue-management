@@ -16,10 +16,10 @@ Chủ cửa hàng đang dùng Excel để ghi doanh thu theo ngày, bốn ca, k�
   Accepted when: bộ lọc tuần theo lịch Thứ 2–Chủ nhật; trong một tuần có các dòng ngày; tổng kỳ khớp với tổng các ngày thuộc kỳ.
 
 - **[P1]** Là chủ cửa hàng, tôi muốn nhập tổng doanh thu cuối cùng của từng ca và tổng Grab/Shopee trong ngày.
-  Accepted when: biểu mẫu có bốn trường doanh thu ca, hai trường doanh thu Grab/Shopee theo ngày; không yêu cầu tách giảm giá, tiền mặt, số đơn hay số sản phẩm; tổng ngày được cộng tự động và tránh cộng trùng.
+  Accepted when: biểu mẫu có bốn trường doanh thu ca, hai trường doanh thu Grab/Shopee theo ngày; kênh không phát sinh được để trống và tính 0; không yêu cầu tách giảm giá, tiền mặt, số đơn hay số sản phẩm; tổng ngày được cộng tự động và tránh cộng trùng.
 
 - **[P1]** Là chủ cửa hàng, tôi muốn tổng doanh thu được tính tự động và đúng để đối chiếu với sổ tay.
-  Accepted when: tổng doanh thu ngày bằng tổng doanh thu cuối cùng của bốn ca cộng doanh thu Grab và Shopee; không cần lưu doanh thu trước giảm, giảm giá, TC, tiền mặt, số bill/đơn hoặc số lượng sản phẩm.
+  Accepted when: tổng doanh thu ngày bằng tổng doanh thu cuối cùng của bốn ca cộng doanh thu Grab/Shopee có phát sinh (kênh trống tính 0); không cần lưu doanh thu trước giảm, giảm giá, TC, tiền mặt, số bill/đơn hoặc số lượng sản phẩm.
 
 - **[P1]** Là chủ cửa hàng, tôi muốn lưu nhiều ảnh minh chứng cho một ngày hoặc ca, gồm Bluebook, vệ sinh và sắp xếp.
   Accepted when: có thể tải nhiều ảnh lên cùng một ngày/ca, gắn nhãn Bluebook, vệ sinh, sắp xếp hoặc khác, xem chúng trong cùng một bộ sưu tập; trạng thái vệ sinh và sắp xếp có thể đánh dấu đã xác nhận/chưa xác nhận.
