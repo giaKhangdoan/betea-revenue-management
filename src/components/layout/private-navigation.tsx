@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const navigationItems = [
   { href: "/", label: "Tổng quan" },
   { href: "/ledger", label: "Sổ ngày" },
+  { href: "/inventory", label: "Kho" },
   { href: "/costs", label: "Chi phí tháng" },
   { href: "/reports", label: "Báo cáo" },
   { href: "/audit", label: "Lịch sử" },

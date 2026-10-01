@@ -17,7 +17,7 @@ export default async function StaffLayout({ children }: Readonly<{ children: Rea
           <span className="brand-mark" aria-hidden="true">B</span>
           <span className="brand-name">betea<span className="brand-subtitle">Khu vực nhân viên</span></span>
         </Link>
-        <div className="staff-account-identity"><span>{access.displayName}</span><form action={signOutAction}><button className="button button-plain" type="submit">Đăng xuất</button></form></div>
+        <div className="staff-account-identity"><Link className="text-link" href="/staff/inventory">Kho</Link><span>{access.displayName}</span><form action={signOutAction}><button className="button button-plain" type="submit">Đăng xuất</button></form></div>
       </header>
       <main className="staff-content">{children}</main>
     </div>

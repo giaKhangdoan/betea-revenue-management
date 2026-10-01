@@ -132,6 +132,17 @@ button { color: inherit; }
 .section-heading h2, .day-note-card h2 { margin: 0; font-size: 16px; font-weight: 620; letter-spacing: -.02em; }
 .section-heading p, .day-note-card p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .section-heading > strong { color: var(--ink); font-size: 13px; }
+.inventory-tabs { display: flex; gap: 6px; margin: -6px 0 16px; border-bottom: 1px solid var(--line); }
+.inventory-tab { display: inline-flex; min-height: 44px; align-items: center; border-bottom: 2px solid transparent; padding: 0 12px; color: var(--muted); font-size: 14px; font-weight: 560; text-decoration: none; }
+.inventory-tab[aria-current="page"] { border-color: var(--accent); color: var(--accent-strong); font-weight: 650; }
+.inventory-panel { padding: 20px; }
+.inventory-item-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.inventory-item { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 13px; }
+.inventory-item-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.inventory-item-heading strong { font-size: 14px; font-weight: 620; }
+.inventory-item-heading .status { flex: 0 0 auto; font-size: 10px; }
+.inventory-item p { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.inventory-empty { margin-top: 0; }
 .text-link { color: var(--accent-strong); font-size: 13px; font-weight: 600; text-decoration: none; }
 .text-link:hover, .text-button:hover { text-decoration: underline; }
 .month-week-list { display: grid; }
@@ -495,6 +506,7 @@ button { color: inherit; }
   .staff-account-fields { grid-template-columns: 1fr 1fr; }
   .staff-topbar { padding: 0 18px; }
   .staff-content { width: min(100% - 32px, 1160px); padding-top: 26px; }
+  .inventory-panel { padding: 16px; }
   .staff-entry-layout { grid-template-columns: 1fr; }
   .staff-entry-aside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .staff-day-row { grid-template-columns: minmax(0, 1fr) minmax(115px, auto); gap: 10px; }
@@ -509,6 +521,8 @@ button { color: inherit; }
   .staff-access-form { grid-template-columns: 1fr; }
   .staff-access-form > .button { width: 100%; }
   .staff-account-identity { gap: 4px; font-size: 12px; }
+  .inventory-item-list { grid-template-columns: 1fr; }
+  .inventory-item { padding: 12px; }
   .staff-topbar { min-height: 58px; padding: 0 12px; }
   .staff-account-identity .button { padding: 0 6px; }
   .staff-entry-aside, .staff-shift-grid { grid-template-columns: 1fr; }
