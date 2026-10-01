@@ -59,8 +59,12 @@ export function InventoryWorkspace({
       <section className="surface inventory-panel">
         {error ? <div className="empty-state"><h2>Chưa tải được danh mục</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : countError ? <div className="empty-state"><h2>Chưa tải được bản kiểm</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : count ? <>
           <div className="section-heading"><div><h2>Bản kiểm {formatBusinessDate(date, { day: "numeric", month: "long", year: "numeric" })}</h2></div><span className="status status-neutral">{count.status === "finalized" ? "Đã chốt" : "Bản nháp"}</span></div>
-          <p className="inventory-draft-note">Bản nháp chưa phải mốc tồn kho.</p>
-          <InventoryCountEditor key={count.id} countId={count.id} items={countItems} editable={count.status === "draft" && (owner || date === today)} />
+          <p className="inventory-draft-note">{count.status === "finalized"
+            ? count.finalized_at
+              ? `Đã chốt lúc ${new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(count.finalized_at))}.`
+              : "Bản kiểm đã chốt."
+            : "Bản nháp chưa phải mốc tồn kho."}</p>
+          <InventoryCountEditor key={count.id} countId={count.id} items={countItems} editable={count.status === "draft" && (owner || date === today)} finalized={count.status === "finalized"} />
         </> : <>
           <div className="section-heading"><div><h2>Chưa mở bản kiểm</h2><p>{formatBusinessDate(date, { day: "numeric", month: "long", year: "numeric" })} · {items.length} mặt hàng đang hoạt động</p></div></div>
           {owner || date === today ? <OpenInventoryCountForm date={date} /> : <p className="form-note">Nhân viên chỉ mở bản kiểm cho ngày hôm nay.</p>}

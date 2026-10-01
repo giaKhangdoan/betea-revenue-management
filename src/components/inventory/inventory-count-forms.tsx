@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
-import { openInventoryCountAction, saveInventoryCountDraftAction, type InventoryCountActionState } from "@/app/(private)/inventory/actions";
+import { finalizeInventoryCountAction, openInventoryCountAction, saveInventoryCountDraftAction, type InventoryCountActionState } from "@/app/(private)/inventory/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import type { InventoryCountItem } from "@/lib/inventory/counts";
 
@@ -11,6 +11,18 @@ export function OpenInventoryCountForm({ date }: { date: string }) {
     <input type="hidden" name="business_date" value={date} />
     <p>Danh sách mặt hàng đang hoạt động sẽ được cố định cho ngày này.</p>
     <button className="button button-primary" type="submit" disabled={pending}>{pending ? "Đang mở…" : "Bắt đầu kiểm"}</button>
+    <ActionMessage error={state?.error} success={state?.success} />
+  </form>;
+}
+
+export function FinalizeInventoryCountForm({ countId, complete }: { countId: string; complete: boolean }) {
+  const [state, action, pending] = useActionState<InventoryCountActionState, FormData>(finalizeInventoryCountAction, undefined);
+  return <form className="inventory-open-form" action={action}>
+    <input type="hidden" name="count_id" value={countId} />
+    <p>Chốt sẽ lưu mốc tồn kho và khóa bản kiểm này.</p>
+    <button className="button button-primary" type="submit" disabled={pending || !complete}>
+      {pending ? "Đang chốt…" : "Chốt bản kiểm"}
+    </button>
     <ActionMessage error={state?.error} success={state?.success} />
   </form>;
 }
@@ -29,7 +41,7 @@ function formatMicro(value: bigint): string {
   return `${whole.toLocaleString("vi-VN")}${fraction ? `,${fraction}` : ""}`;
 }
 
-export function InventoryCountEditor({ countId, items, editable }: { countId: string; items: InventoryCountItem[]; editable: boolean }) {
+export function InventoryCountEditor({ countId, items, editable, finalized = false }: { countId: string; items: InventoryCountItem[]; editable: boolean; finalized?: boolean }) {
   const [state, action, pending] = useActionState<InventoryCountActionState, FormData>(saveInventoryCountDraftAction, undefined);
   const initial = Object.fromEntries(items.map((item) => [item.item_id, {
     large: item.large_quantity == null ? "" : String(item.large_quantity),
@@ -86,8 +98,12 @@ export function InventoryCountEditor({ countId, items, editable }: { countId: st
       {editable ? <>
         <button className="button button-primary" type="submit" disabled={pending || Object.keys(dirty).length === 0 || (submitted && Boolean(state?.success))}>{pending ? "Đang lưu…" : "Lưu bản nháp"}</button>
         <ActionMessage error={state?.error} success={state?.success} />
-      </> : <p className="form-note">Chỉ có thể sửa bản nháp của ngày hôm nay.</p>}
+      </> : <p className="form-note">{finalized ? "Bản đã chốt, không thể sửa." : "Chỉ có thể sửa bản nháp của ngày hôm nay."}</p>}
     </form>
+    {editable ? <FinalizeInventoryCountForm
+      countId={countId}
+      complete={missingItems.length === 0 && !pending && (Object.keys(dirty).length === 0 || (submitted && Boolean(state?.success)))}
+    /> : null}
     <section className="inventory-missing" aria-live="polite">
       <h3>Còn thiếu: {missingItems.length} mặt hàng</h3>
       {missingItems.length ? <ul>{missingItems.map((item) => <li key={item.item_id}>{item.item_name}</li>)}</ul> : <p>Đã nhập số lượng cho tất cả mặt hàng.</p>}

@@ -74,3 +74,27 @@ export async function saveInventoryCountDraftAction(
   revalidatePath(access.basePath);
   return { success: "Đã lưu bản nháp. Bản này chưa phải mốc tồn kho." };
 }
+
+export async function finalizeInventoryCountAction(
+  _state: InventoryCountActionState,
+  formData: FormData,
+): Promise<InventoryCountActionState> {
+  const countId = idSchema.safeParse(formData.get("count_id"));
+  if (!countId.success) return { error: "Bản kiểm không hợp lệ." };
+
+  const access = await getInventoryAccess();
+  if (!access) return { error: "Tài khoản không còn quyền truy cập kho." };
+  const { error } = await access.supabase.rpc("finalize_inventory_count", { p_count_id: countId.data });
+  if (error) {
+    return {
+      error: error.message.includes("uncounted items")
+        ? "Hãy nhập số lượng cho tất cả mặt hàng trước khi chốt. Số 0 vẫn được tính là đã kiểm."
+        : error.message.includes("recounted after the latest receipt")
+          ? "Có hàng nhập sau lần đếm gần nhất. Hãy kiểm lại mặt hàng đó rồi chốt."
+          : "Không thể chốt bản kiểm. Kiểm tra quyền truy cập và trạng thái bản kiểm.",
+    };
+  }
+
+  revalidatePath(access.basePath);
+  return { success: "Đã chốt bản kiểm. Phiếu nhập sau thời điểm này thuộc kỳ tiếp theo." };
+}
