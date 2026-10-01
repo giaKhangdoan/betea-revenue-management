@@ -12,7 +12,9 @@ values
   ('10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', 'inventory-staff@example.test', 'Inventory staff', true),
   ('10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000003', 'inventory-inactive@example.test', 'Inactive staff', false);
 insert into auth.sessions (id, user_id)
-values ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002');
+values
+  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002'),
+  ('20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000003');
 
 select private.seed_inventory_catalog_for_owner('10000000-0000-4000-8000-000000000001');
 
@@ -63,7 +65,12 @@ select pass('active staff can directly read the catalog');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000003', true);
-select set_config('request.jwt.claims', '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}', true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', '10000000-0000-4000-8000-000000000003',
+  'role', 'authenticated',
+  'session_id', '20000000-0000-4000-8000-000000000002',
+  'iat', extract(epoch from now())::bigint
+)::text, true);
 do $$ begin
   if (select count(*) from public.inventory_items where owner_id = '10000000-0000-4000-8000-000000000001') <> 0 then
     raise exception 'inactive staff could read the catalog';
