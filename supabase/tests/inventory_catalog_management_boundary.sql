@@ -72,9 +72,17 @@ do $$ begin
     raise exception 'blank unit was accepted';
   exception when check_violation then null;
   end;
+  begin
+    perform public.owner_update_inventory_item(
+      (select id from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'),
+      'Đường cập nhật', 'Nguyên liệu', 'Hộp', 0.5, 'Cái'
+    );
+    raise exception 'fractional conversion factor for indivisible unit was accepted';
+  exception when check_violation then null;
+  end;
 end $$;
 reset role;
-select pass('database rejects invalid conversion factors and blank units');
+select pass('database rejects invalid conversion factors, blank units, and fractional factors for indivisible units');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '40000000-0000-4000-8000-000000000001', true);

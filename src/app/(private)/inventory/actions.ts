@@ -20,6 +20,11 @@ const catalogItemSchema = z.object({
     .regex(/^\d{1,11}(?:\.\d{1,3})?$/, "Hệ số cần là số dương, tối đa 3 chữ số thập phân.")
     .refine((value) => Number(value) > 0, "Hệ số cần lớn hơn 0."),
   smallUnit: z.string().trim().min(1, "Nhập đơn vị gốc.").max(120, "Đơn vị tối đa 120 ký tự."),
+}).superRefine(({ conversionFactor, smallUnit }, context) => {
+  const divisibleUnits = ["gr", "g", "mg", "ml", "kg", "l", "lít"];
+  if (!divisibleUnits.includes(smallUnit.toLowerCase()) && !Number.isInteger(Number(conversionFactor))) {
+    context.addIssue({ code: "custom", path: ["conversionFactor"], message: "Đơn vị gốc không chia lẻ nên hệ số phải là số nguyên." });
+  }
 });
 
 function catalogFormData(formData: FormData) {
