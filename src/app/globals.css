@@ -451,6 +451,7 @@ button { color: inherit; }
 .staff-topbar { display: flex; min-height: 70px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: white; padding: 0 max(24px, calc((100vw - 1160px) / 2)); }
 .staff-topbar .brand { padding: 0; }
 .staff-account-identity { display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 13px; }
+.staff-nav-link { display: inline-flex; min-height: 44px; align-items: center; padding: 0 8px; }
 .staff-account-identity form { margin: 0; }
 .staff-content { width: min(100% - 48px, 1160px); margin: 0 auto; padding: 40px 0 64px; }
 .staff-welcome-card { padding: 24px; }
