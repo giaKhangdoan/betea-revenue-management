@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { formatBusinessDate } from "@/lib/finance/format";
+import type { InventoryCount, InventoryCountItem } from "@/lib/inventory/counts";
+import { InventoryCountEditor, OpenInventoryCountForm } from "@/components/inventory/inventory-count-forms";
 
 type InventoryItem = {
   id: string;
@@ -14,11 +17,27 @@ export function InventoryWorkspace({
   items,
   tab,
   error,
+  owner,
+  date,
+  today,
+  weekStart,
+  weekEnd,
+  count,
+  countItems,
+  countError,
 }: {
   basePath: string;
   items: InventoryItem[];
   tab: "stock" | "receiving";
   error: boolean;
+  owner: boolean;
+  date: string;
+  today: string;
+  weekStart: string;
+  weekEnd: string;
+  count: InventoryCount | null;
+  countItems: InventoryCountItem[];
+  countError: boolean;
 }) {
   return <>
     <div className="page-heading">
@@ -26,20 +45,28 @@ export function InventoryWorkspace({
     </div>
 
     <nav className="inventory-tabs" aria-label="Kho">
-      <Link className="inventory-tab" href={`${basePath}?tab=stock`} aria-current={tab === "stock" ? "page" : undefined}>Tồn kho</Link>
+      <Link className="inventory-tab" href={`${basePath}?tab=stock&date=${date}`} aria-current={tab === "stock" ? "page" : undefined}>Tồn kho</Link>
       <Link className="inventory-tab" href={`${basePath}?tab=receiving`} aria-current={tab === "receiving" ? "page" : undefined}>Nhập kho</Link>
     </nav>
 
-    {tab === "stock" ? <section className="surface inventory-panel">
-      {error ? <div className="empty-state"><h2>Chưa tải được danh mục</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : <>
-        <div className="section-heading"><div><h2>Danh mục mặt hàng</h2><p>Đơn vị lớn quy đổi sang đơn vị nhỏ.</p></div><strong>{items.length} mặt hàng</strong></div>
-        {items.length === 0 ? <div className="empty-state"><h2>Chưa có mặt hàng</h2><p>Danh mục sẽ xuất hiện sau khi dữ liệu kho được khởi tạo.</p></div> : <ul className="inventory-item-list">
-          {items.map((item) => <li className="inventory-item" key={item.id}>
-            <div className="inventory-item-heading"><strong>{item.name}</strong><span className="status status-neutral">{item.category}</span></div>
-            <p>1 {item.large_unit} = {Number(item.conversion_factor).toLocaleString("vi-VN")} {item.small_unit}</p>
-          </li>)}
-        </ul>}
-      </>}
-    </section> : <section className="empty-state inventory-empty"><h2>Chưa có phiếu nhập</h2><p>Các phiếu giao hàng sẽ xuất hiện tại đây.</p></section>}
+    {tab === "stock" ? <>
+      <form className="inventory-date-filter" method="get" action={basePath}>
+        <input type="hidden" name="tab" value="stock" />
+        <label className="field"><span>Ngày kiểm</span><input type="date" name="date" value={date} min={owner ? undefined : weekStart} max={owner ? today : weekEnd} /></label>
+        <button className="button button-secondary" type="submit">Xem ngày</button>
+        <span>{owner ? "Chủ xem mọi ngày." : "Nhân viên xem trong tuần hiện tại."}</span>
+      </form>
+      <section className="surface inventory-panel">
+        {error ? <div className="empty-state"><h2>Chưa tải được danh mục</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : countError ? <div className="empty-state"><h2>Chưa tải được bản kiểm</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : count ? <>
+          <div className="section-heading"><div><h2>Bản kiểm {formatBusinessDate(date, { day: "numeric", month: "long", year: "numeric" })}</h2></div><span className="status status-neutral">{count.status === "finalized" ? "Đã chốt" : "Bản nháp"}</span></div>
+          <p className="inventory-draft-note">Bản nháp chưa phải mốc tồn kho.</p>
+          <InventoryCountEditor key={count.id} countId={count.id} items={countItems} editable={count.status === "draft" && (owner || date === today)} />
+        </> : <>
+          <div className="section-heading"><div><h2>Chưa mở bản kiểm</h2><p>{formatBusinessDate(date, { day: "numeric", month: "long", year: "numeric" })} · {items.length} mặt hàng đang hoạt động</p></div></div>
+          {owner || date === today ? <OpenInventoryCountForm date={date} /> : <p className="form-note">Nhân viên chỉ mở bản kiểm cho ngày hôm nay.</p>}
+          {error ? null : items.length === 0 ? <div className="empty-state"><h2>Chưa có mặt hàng</h2><p>Danh mục sẽ xuất hiện sau khi dữ liệu kho được khởi tạo.</p></div> : <ul className="inventory-item-list">{items.map((item) => <li className="inventory-item" key={item.id}><div className="inventory-item-heading"><strong>{item.name}</strong><span className="status status-neutral">{item.category}</span></div><p>1 {item.large_unit} = {Number(item.conversion_factor).toLocaleString("vi-VN")} {item.small_unit}</p></li>)}</ul>}
+        </>}
+      </section>
+    </> : <section className="empty-state inventory-empty"><h2>Chưa có phiếu nhập</h2><p>Các phiếu giao hàng sẽ xuất hiện tại đây.</p></section>}
   </>;
 }
