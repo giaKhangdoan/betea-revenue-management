@@ -1,22 +1,19 @@
 import Link from "next/link";
 import { formatBusinessDate } from "@/lib/finance/format";
+import type { InventoryItem } from "@/lib/inventory/catalog";
+import type { InventoryReceipt } from "@/lib/inventory/receipts";
 import type { InventoryCount, InventoryCountItem } from "@/lib/inventory/counts";
+import { InventoryReceivingPanel } from "@/components/inventory/inventory-receiving-panel";
 import { InventoryCountEditor, OpenInventoryCountForm } from "@/components/inventory/inventory-count-forms";
-
-type InventoryItem = {
-  id: string;
-  name: string;
-  category: string;
-  large_unit: string;
-  conversion_factor: number | string;
-  small_unit: string;
-};
 
 export function InventoryWorkspace({
   basePath,
   items,
+  receipts,
   tab,
   error,
+  receivingError,
+  canCreateReceipts,
   owner,
   date,
   today,
@@ -28,8 +25,11 @@ export function InventoryWorkspace({
 }: {
   basePath: string;
   items: InventoryItem[];
+  receipts: InventoryReceipt[];
   tab: "stock" | "receiving";
   error: boolean;
+  receivingError: boolean;
+  canCreateReceipts: boolean;
   owner: boolean;
   date: string;
   today: string;
@@ -67,6 +67,6 @@ export function InventoryWorkspace({
           {error ? null : items.length === 0 ? <div className="empty-state"><h2>Chưa có mặt hàng</h2><p>Danh mục sẽ xuất hiện sau khi dữ liệu kho được khởi tạo.</p></div> : <ul className="inventory-item-list">{items.map((item) => <li className="inventory-item" key={item.id}><div className="inventory-item-heading"><strong>{item.name}</strong><span className="status status-neutral">{item.category}</span></div><p>1 {item.large_unit} = {Number(item.conversion_factor).toLocaleString("vi-VN")} {item.small_unit}</p></li>)}</ul>}
         </>}
       </section>
-    </> : <section className="empty-state inventory-empty"><h2>Chưa có phiếu nhập</h2><p>Các phiếu giao hàng sẽ xuất hiện tại đây.</p></section>}
+    </> : <InventoryReceivingPanel items={items} receipts={receipts} receivingError={receivingError} canCreate={canCreateReceipts} owner={owner} today={today} />}
   </>;
 }
