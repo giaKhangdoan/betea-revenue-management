@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { formatBusinessDate } from "@/lib/finance/format";
 import type { InventoryItem } from "@/lib/inventory/catalog";
+import type { InventoryCatalogItem } from "@/lib/inventory/catalog";
 import type { InventoryReceipt } from "@/lib/inventory/receipts";
 import type { InventoryCount, InventoryCountItem } from "@/lib/inventory/counts";
 import { InventoryReceivingPanel } from "@/components/inventory/inventory-receiving-panel";
 import { InventoryCountEditor, OpenInventoryCountForm } from "@/components/inventory/inventory-count-forms";
+import { InventoryCatalogManager } from "@/components/inventory/inventory-catalog-manager";
 
 export function InventoryWorkspace({
   basePath,
   items,
+  catalogItems,
   receipts,
   tab,
   error,
@@ -25,8 +28,9 @@ export function InventoryWorkspace({
 }: {
   basePath: string;
   items: InventoryItem[];
+  catalogItems: InventoryCatalogItem[];
   receipts: InventoryReceipt[];
-  tab: "stock" | "receiving";
+  tab: "stock" | "receiving" | "catalog";
   error: boolean;
   receivingError: boolean;
   canCreateReceipts: boolean;
@@ -47,9 +51,12 @@ export function InventoryWorkspace({
     <nav className="inventory-tabs" aria-label="Kho">
       <Link className="inventory-tab" href={`${basePath}?tab=stock&date=${date}`} aria-current={tab === "stock" ? "page" : undefined}>Tồn kho</Link>
       <Link className="inventory-tab" href={`${basePath}?tab=receiving`} aria-current={tab === "receiving" ? "page" : undefined}>Nhập kho</Link>
+      {owner ? <Link className="inventory-tab" href={`${basePath}?tab=catalog`} aria-current={tab === "catalog" ? "page" : undefined}>Danh mục</Link> : null}
     </nav>
 
-    {tab === "stock" ? <>
+    {tab === "catalog" && owner ? <section className="surface inventory-panel">{error
+      ? <div className="empty-state"><h2>Chưa tải được danh mục</h2><p>Vui lòng tải lại trang sau ít phút.</p></div>
+      : <InventoryCatalogManager items={catalogItems} />}</section> : tab === "stock" ? <>
       <form className="inventory-date-filter" method="get" action={basePath}>
         <input type="hidden" name="tab" value="stock" />
         <label className="field"><span>Ngày kiểm</span><input type="date" name="date" value={date} min={owner ? undefined : weekStart} max={owner ? today : weekEnd} /></label>

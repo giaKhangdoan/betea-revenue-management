@@ -27,5 +27,5 @@ export default async function StaffInventoryPage({
   const date = isInventoryBusinessDate(requestedDate) && requestedDate >= monday && requestedDate <= sunday ? requestedDate : today;
   const count = params.tab === "receiving" ? { count: null, items: [], error: false } : await getInventoryCount(staff.supabase, staff.ownerId, date);
 
-  return <InventoryWorkspace basePath="/staff/inventory" items={data ?? []} receipts={receipts.data} tab={params.tab === "receiving" ? "receiving" : "stock"} error={Boolean(error)} receivingError={receipts.error} canCreateReceipts owner={false} date={date} today={today} weekStart={monday} weekEnd={sunday} count={count.count} countItems={count.items} countError={count.error} />;
+  return <InventoryWorkspace basePath="/staff/inventory" items={data ?? []} catalogItems={[]} receipts={receipts.data} tab={params.tab === "receiving" ? "receiving" : "stock"} error={Boolean(error)} receivingError={receipts.error} canCreateReceipts owner={false} date={date} today={today} weekStart={monday} weekEnd={sunday} count={count.count} countItems={count.items} countError={count.error} />;
 }
