@@ -29,6 +29,13 @@ type UploadItem = {
   retryable?: boolean;
 };
 
+type ActivePhoto = {
+  url: string;
+  title: string;
+  detail: string;
+  photoId?: string;
+};
+
 const TARGET_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BATCH_SIZE = 20;
 const EVIDENCE_BUCKET = "betea-evidence";
@@ -62,27 +69,20 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
   const [caption, setCaption] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [activePhoto, setActivePhoto] = useState<{ url: string; title: string; detail: string } | null>(null);
+  const [activePhoto, setActivePhoto] = useState<ActivePhoto | null>(null);
   const [savedPhotos, setSavedPhotos] = useState<Photo[]>(initialPhotos);
   const savedPhotosRef = useRef<Photo[]>(initialPhotos);
-  const signedUrlExpiryRef = useRef(new Map<string, number>());
+  const photoRenewalRef = useRef(new Set<string>());
 
   useEffect(() => {
-    const now = Date.now();
     const previousPhotos = new Map(savedPhotosRef.current.map((photo) => [photo.id, photo]));
     const nextPhotos = initialPhotos.map((photo) => {
       const previousPhoto = previousPhotos.get(photo.id);
-      const previousExpiry = signedUrlExpiryRef.current.get(photo.id);
-      if (previousPhoto && previousExpiry !== undefined && previousExpiry > now) {
+      if (previousPhoto && previousPhoto.object_path === photo.object_path) {
         return { ...photo, signed_url: previousPhoto.signed_url };
       }
-      signedUrlExpiryRef.current.set(photo.id, now + 300_000);
       return photo;
     });
-    const nextPhotoIds = new Set(nextPhotos.map((photo) => photo.id));
-    for (const photoId of signedUrlExpiryRef.current.keys()) {
-      if (!nextPhotoIds.has(photoId)) signedUrlExpiryRef.current.delete(photoId);
-    }
     savedPhotosRef.current = nextPhotos;
     setSavedPhotos(nextPhotos);
   }, [initialPhotos]);
@@ -144,6 +144,22 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
     } finally {
       bitmap.close();
     }
+  }
+
+  async function renewPhotoUrl(photo: Photo) {
+    if (photoRenewalRef.current.has(photo.id)) return;
+    photoRenewalRef.current.add(photo.id);
+
+    const client = createBrowserClient();
+    if (!client) return;
+    const { data } = await client.storage.from(EVIDENCE_BUCKET).createSignedUrl(photo.object_path, 300);
+    if (!data?.signedUrl) return;
+
+    const nextPhotos = savedPhotosRef.current.map((item) => item.id === photo.id ? { ...item, signed_url: data.signedUrl } : item);
+    savedPhotosRef.current = nextPhotos;
+    setSavedPhotos(nextPhotos);
+    setActivePhoto((current) => current?.photoId === photo.id ? { ...current, url: data.signedUrl } : current);
+    photoRenewalRef.current.delete(photo.id);
   }
 
   function selectFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -393,13 +409,13 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
         <div className="photo-grid">
           {savedPhotos.map((photo) => <article className="photo-item" key={photo.id}>
             {/* Signed URLs expire quickly; the database stores only the private object path. */}
-            <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })} aria-label={`Xem ảnh lớn: ${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `, ${photo.caption}` : ""}`}><Image src={photo.signed_url} alt={`${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `: ${photo.caption}` : ""}`} width={600} height={450} loading="lazy" unoptimized /></button>
-            <div className="photo-meta"><div><strong>{categoryLabels[photo.category] ?? "Ảnh"}</strong><span>{photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}</span>{photo.caption ? <span>{photo.caption}</span> : null}</div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })}>Xem ảnh</button>{canDelete ? <button className="text-button text-button-danger" type="button" onClick={() => removePhoto(photo.id)} disabled={busy}>Xóa ảnh</button> : null}</div></div>
+            <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ photoId: photo.id, url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })} aria-label={`Xem ảnh lớn: ${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `, ${photo.caption}` : ""}`}><Image src={photo.signed_url} alt={`${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `: ${photo.caption}` : ""}`} width={600} height={450} loading="lazy" onError={() => void renewPhotoUrl(photo)} unoptimized /></button>
+            <div className="photo-meta"><div><strong>{categoryLabels[photo.category] ?? "Ảnh"}</strong><span>{photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}</span>{photo.caption ? <span>{photo.caption}</span> : null}</div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ photoId: photo.id, url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })}>Xem ảnh</button>{canDelete ? <button className="text-button text-button-danger" type="button" onClick={() => removePhoto(photo.id)} disabled={busy}>Xóa ảnh</button> : null}</div></div>
           </article>)}
         </div>
       ) : null}
       <dialog className="photo-preview-dialog" ref={previewDialogRef} aria-labelledby="photo-preview-title" onClose={() => setActivePhoto(null)} onClick={(event) => { if (event.target === event.currentTarget) previewDialogRef.current?.close(); }}>
-        {activePhoto ? <div className="photo-preview-dialog-content"><div className="photo-preview-dialog-heading"><div><h2 id="photo-preview-title">{activePhoto.title}</h2><p>{activePhoto.detail}</p></div><button className="button button-secondary" type="button" autoFocus onClick={() => previewDialogRef.current?.close()}>Đóng ảnh</button></div><Image src={activePhoto.url} alt={`${activePhoto.title}${activePhoto.detail ? ` · ${activePhoto.detail}` : ""}`} width={1600} height={1200} unoptimized /></div> : null}
+        {activePhoto ? <div className="photo-preview-dialog-content"><div className="photo-preview-dialog-heading"><div><h2 id="photo-preview-title">{activePhoto.title}</h2><p>{activePhoto.detail}</p></div><button className="button button-secondary" type="button" autoFocus onClick={() => previewDialogRef.current?.close()}>Đóng ảnh</button></div><Image src={activePhoto.url} alt={`${activePhoto.title}${activePhoto.detail ? ` · ${activePhoto.detail}` : ""}`} width={1600} height={1200} onError={() => { if (activePhoto.photoId) { const photo = savedPhotos.find((item) => item.id === activePhoto.photoId); if (photo) void renewPhotoUrl(photo); } }} unoptimized /></div> : null}
       </dialog>
     </section>
   );
