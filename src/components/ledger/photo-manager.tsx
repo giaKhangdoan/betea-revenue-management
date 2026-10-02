@@ -29,7 +29,7 @@ type UploadItem = {
   retryable?: boolean;
 };
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const TARGET_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BATCH_SIZE = 20;
 const EVIDENCE_BUCKET = "betea-evidence";
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -63,6 +63,29 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [activePhoto, setActivePhoto] = useState<{ url: string; title: string; detail: string } | null>(null);
+  const [savedPhotos, setSavedPhotos] = useState<Photo[]>(initialPhotos);
+  const savedPhotosRef = useRef<Photo[]>(initialPhotos);
+  const signedUrlExpiryRef = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    const now = Date.now();
+    const previousPhotos = new Map(savedPhotosRef.current.map((photo) => [photo.id, photo]));
+    const nextPhotos = initialPhotos.map((photo) => {
+      const previousPhoto = previousPhotos.get(photo.id);
+      const previousExpiry = signedUrlExpiryRef.current.get(photo.id);
+      if (previousPhoto && previousExpiry !== undefined && previousExpiry > now) {
+        return { ...photo, signed_url: previousPhoto.signed_url };
+      }
+      signedUrlExpiryRef.current.set(photo.id, now + 300_000);
+      return photo;
+    });
+    const nextPhotoIds = new Set(nextPhotos.map((photo) => photo.id));
+    for (const photoId of signedUrlExpiryRef.current.keys()) {
+      if (!nextPhotoIds.has(photoId)) signedUrlExpiryRef.current.delete(photoId);
+    }
+    savedPhotosRef.current = nextPhotos;
+    setSavedPhotos(nextPhotos);
+  }, [initialPhotos]);
 
   function replaceUploadItems(nextItems: UploadItem[]) {
     uploadItemsRef.current = nextItems;
@@ -88,7 +111,7 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
   }, [activePhoto]);
 
   async function prepareImage(file: File): Promise<File> {
-    if (file.size <= MAX_IMAGE_BYTES) return file;
+    if (file.size <= TARGET_IMAGE_BYTES) return file;
     const bitmap = await createImageBitmap(file);
     try {
       let scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
@@ -100,7 +123,7 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
         if (!context) throw new Error("Không thể chuẩn bị ảnh trên thiết bị này.");
         context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
-        if (blob && blob.size <= MAX_IMAGE_BYTES) {
+        if (blob && blob.size <= TARGET_IMAGE_BYTES) {
           return new File([blob], `${file.name.replace(/\.[^.]+$/, "")}.webp`, { type: "image/webp", lastModified: file.lastModified });
         }
         if (blob && quality === 0.78) {
@@ -112,12 +135,12 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
           if (!smallerContext) break;
           smallerContext.drawImage(bitmap, 0, 0, smaller.width, smaller.height);
           const smallerBlob = await new Promise<Blob | null>((resolve) => smaller.toBlob(resolve, "image/webp", 0.76));
-          if (smallerBlob && smallerBlob.size <= MAX_IMAGE_BYTES) {
+          if (smallerBlob && smallerBlob.size <= TARGET_IMAGE_BYTES) {
             return new File([smallerBlob], `${file.name.replace(/\.[^.]+$/, "")}.webp`, { type: "image/webp", lastModified: file.lastModified });
           }
         }
       }
-      throw new Error(`Ảnh “${file.name}” vẫn lớn hơn 5 MB sau khi nén. Hãy chọn ảnh có độ phân giải thấp hơn.`);
+      throw new Error(`Ảnh “${file.name}” vẫn lớn hơn 2 MB sau khi nén. Hãy chọn ảnh có độ phân giải thấp hơn.`);
     } finally {
       bitmap.close();
     }
@@ -194,7 +217,7 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
     // Restore that exact object path so the existing label continues to work.
     if (!objectAlreadyUploaded) {
       const { error: uploadError } = await client.storage.from(EVIDENCE_BUCKET).upload(objectPath, preparedFile, {
-        cacheControl: "3600", contentType: preparedFile.type, upsert: false,
+        cacheControl: "86400", contentType: preparedFile.type, upsert: false,
       });
       if (uploadError) throw new Error("Tải ảnh lên thất bại. Hãy thử lại; ứng dụng sẽ kiểm tra tệp trước khi gửi lại.");
     }
@@ -304,7 +327,7 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
 
   async function removePhoto(id: string) {
     if (busyRef.current || !canDelete) return;
-    const photo = initialPhotos.find((item) => item.id === id);
+    const photo = savedPhotos.find((item) => item.id === id);
     const category = photo ? categoryLabels[photo.category] ?? "ảnh" : "ảnh";
     if (!window.confirm(`Xóa ${category.toLowerCase()} này khỏi ngày ${date}? Ảnh đã xóa không thể khôi phục từ màn hình này.`)) return;
     busyRef.current = true;
@@ -328,7 +351,7 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
 
   return (
     <section className="surface photo-card">
-      <div className="section-heading"><div><h2>Ảnh xác nhận</h2><p>Bluebook, vệ sinh và sắp xếp · tối đa 5 MB/ảnh</p></div><strong>{initialPhotos.length} ảnh đã lưu</strong></div>
+      <div className="section-heading"><div><h2>Ảnh xác nhận</h2><p>Bluebook, vệ sinh và sắp xếp · ảnh sẽ được nén còn khoảng 2 MB</p></div><strong>{savedPhotos.length} ảnh đã lưu</strong></div>
       <form className="photo-form" onSubmit={uploadSelected}>
         <label className="field"><span>Loại ảnh</span><select value={category} onChange={(event) => setCategory(event.target.value)} disabled={busy || !canUpload}><option value="bluebook">Bluebook</option><option value="cleaning">Vệ sinh</option><option value="arrangement">Sắp xếp</option><option value="other">Khác</option></select></label>
         <label className="field"><span>Gắn với ca (không bắt buộc)</span><select value={shiftCode} onChange={(event) => setShiftCode(event.target.value)} disabled={busy || !canUpload}><option value="">Cả ngày</option><option value="06-10">Ca 06:00–10:00</option><option value="10-14">Ca 10:00–14:00</option><option value="14-18">Ca 14:00–18:00</option><option value="18-22">Ca 18:00–22:00</option></select></label>
@@ -366,11 +389,11 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
         </div>
       ) : null}
 
-      {initialPhotos.length === 0 && uploadItems.length === 0 ? <div className="photo-empty-state"><strong>Chưa có ảnh lưu cho ngày này</strong><p>Chọn Bluebook, ảnh vệ sinh hoặc sắp xếp. Ảnh sẽ hiện ở đây sau khi lưu.</p></div> : initialPhotos.length > 0 ? (
+      {savedPhotos.length === 0 && uploadItems.length === 0 ? <div className="photo-empty-state"><strong>Chưa có ảnh lưu cho ngày này</strong><p>Chọn Bluebook, ảnh vệ sinh hoặc sắp xếp. Ảnh sẽ hiện ở đây sau khi lưu.</p></div> : savedPhotos.length > 0 ? (
         <div className="photo-grid">
-          {initialPhotos.map((photo) => <article className="photo-item" key={photo.id}>
+          {savedPhotos.map((photo) => <article className="photo-item" key={photo.id}>
             {/* Signed URLs expire quickly; the database stores only the private object path. */}
-            <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })} aria-label={`Xem ảnh lớn: ${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `, ${photo.caption}` : ""}`}><Image src={photo.signed_url} alt={`${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `: ${photo.caption}` : ""}`} width={600} height={450} unoptimized /></button>
+            <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })} aria-label={`Xem ảnh lớn: ${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `, ${photo.caption}` : ""}`}><Image src={photo.signed_url} alt={`${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `: ${photo.caption}` : ""}`} width={600} height={450} loading="lazy" unoptimized /></button>
             <div className="photo-meta"><div><strong>{categoryLabels[photo.category] ?? "Ảnh"}</strong><span>{photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}</span>{photo.caption ? <span>{photo.caption}</span> : null}</div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })}>Xem ảnh</button>{canDelete ? <button className="text-button text-button-danger" type="button" onClick={() => removePhoto(photo.id)} disabled={busy}>Xóa ảnh</button> : null}</div></div>
           </article>)}
         </div>

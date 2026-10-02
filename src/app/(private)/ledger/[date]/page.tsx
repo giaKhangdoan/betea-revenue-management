@@ -39,7 +39,7 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
         <div><p className="eyebrow">SỔ NGÀY</p><h1>{formatBusinessDate(date)}</h1><p>Thông tin doanh thu, công tơ và đối soát vận hành.</p></div>
         <Link className="button button-secondary" href={`/ledger?date=${date}`}>Về tuần này</Link>
       </div>
-      <OwnerLiveRefresh />
+      <OwnerLiveRefresh ownerId={owner.ownerId} date={date} />
       <div className="day-layout">
         <div className="day-primary">
           <DailyEntryForm key={date} date={date} record={record} nextMorningKwh={nextDayResult.data[0]?.electricity_morning_kwh == null ? null : Number(nextDayResult.data[0].electricity_morning_kwh)} />
