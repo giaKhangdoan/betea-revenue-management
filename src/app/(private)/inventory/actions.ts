@@ -15,13 +15,27 @@ const quantitySchema = z.string().max(16).regex(/^\d{1,12}(\.\d{1,3})?$/);
 const catalogItemSchema = z.object({
   name: z.string().trim().min(1, "Nhập tên mặt hàng.").max(120, "Tên mặt hàng tối đa 120 ký tự."),
   category: z.string().trim().min(1, "Nhập nhóm hàng.").max(120, "Nhóm hàng tối đa 120 ký tự."),
-  largeUnit: z.string().trim().min(1, "Nhập đơn vị lớn.").max(120, "Đơn vị tối đa 120 ký tự."),
-  conversionFactor: z.string().trim()
-    .regex(/^\d{1,11}(?:\.\d{1,3})?$/, "Hệ số cần là số dương, tối đa 3 chữ số thập phân.")
-    .refine((value) => Number(value) > 0, "Hệ số cần lớn hơn 0."),
+  largeUnit: z.string().trim().max(120, "Đơn vị tối đa 120 ký tự."),
+  conversionFactor: z.string().trim(),
   smallUnit: z.string().trim().min(1, "Nhập đơn vị gốc.").max(120, "Đơn vị tối đa 120 ký tự."),
-}).superRefine(({ conversionFactor, smallUnit }, context) => {
-  const divisibleUnits = ["gr", "g", "mg", "ml", "kg", "l", "lít"];
+  countLargeUnitOnly: z.boolean(),
+}).superRefine(({ largeUnit, conversionFactor, smallUnit, countLargeUnitOnly }, context) => {
+  const hasLargeUnit = largeUnit.length > 0;
+  if (!hasLargeUnit && conversionFactor.length > 0) {
+    context.addIssue({ code: "custom", path: ["conversionFactor"], message: "Chỉ nhập hệ số khi đã có đơn vị nhập." });
+  }
+  if (hasLargeUnit && largeUnit.toLocaleLowerCase("vi") === smallUnit.toLocaleLowerCase("vi")) {
+    context.addIssue({ code: "custom", path: ["largeUnit"], message: "Hai đơn vị giống nhau thì chỉ cần khai báo một đơn vị tồn." });
+  }
+  if (!conversionFactor) {
+    if (countLargeUnitOnly) context.addIssue({ code: "custom", path: ["countLargeUnitOnly"], message: "Chỉ chọn kiểm theo đơn vị nhập khi có hệ số quy đổi." });
+    return;
+  }
+  if (!/^\d{1,11}(?:\.\d{1,3})?$/.test(conversionFactor) || Number(conversionFactor) <= 0) {
+    context.addIssue({ code: "custom", path: ["conversionFactor"], message: "Hệ số cần là số dương, tối đa 3 chữ số thập phân." });
+    return;
+  }
+  const divisibleUnits = ["gr", "ml"];
   if (!divisibleUnits.includes(smallUnit.toLowerCase()) && !Number.isInteger(Number(conversionFactor))) {
     context.addIssue({ code: "custom", path: ["conversionFactor"], message: "Đơn vị gốc không chia lẻ nên hệ số phải là số nguyên." });
   }
@@ -34,6 +48,7 @@ function catalogFormData(formData: FormData) {
     largeUnit: formData.get("large_unit"),
     conversionFactor: formData.get("conversion_factor"),
     smallUnit: formData.get("small_unit"),
+    countLargeUnitOnly: formData.get("count_large_unit_only") === "on",
   };
 }
 
@@ -53,9 +68,10 @@ export async function createInventoryItemAction(
   const { error } = await owner.supabase.rpc("owner_create_inventory_item", {
     p_name: item.data.name,
     p_category: item.data.category,
-    p_large_unit: item.data.largeUnit,
-    p_conversion_factor: item.data.conversionFactor,
+    p_large_unit: item.data.largeUnit || null,
+    p_conversion_factor: item.data.conversionFactor || null,
     p_small_unit: item.data.smallUnit,
+    p_count_large_unit_only: item.data.countLargeUnitOnly,
   });
   if (error) return { error: "Chưa thêm được mặt hàng. Hãy kiểm tra đơn vị và hệ số quy đổi." };
 
@@ -78,9 +94,10 @@ export async function updateInventoryItemAction(
     p_item_id: id.data,
     p_name: item.data.name,
     p_category: item.data.category,
-    p_large_unit: item.data.largeUnit,
-    p_conversion_factor: item.data.conversionFactor,
+    p_large_unit: item.data.largeUnit || null,
+    p_conversion_factor: item.data.conversionFactor || null,
     p_small_unit: item.data.smallUnit,
+    p_count_large_unit_only: item.data.countLargeUnitOnly,
   });
   if (error) return { error: "Chưa lưu được mặt hàng. Hãy kiểm tra đơn vị và hệ số quy đổi." };
 
@@ -102,6 +119,22 @@ export async function deactivateInventoryItemAction(
 
   revalidatePath("/inventory");
   return { success: "Đã ngừng dùng mặt hàng. Lịch sử đã lưu vẫn được giữ." };
+}
+
+export async function reactivateInventoryItemAction(
+  _state: InventoryCatalogActionState,
+  formData: FormData,
+): Promise<InventoryCatalogActionState> {
+  const id = idSchema.safeParse(formData.get("item_id"));
+  if (!id.success) return { error: "Mặt hàng không hợp lệ." };
+
+  const owner = await requireOwnerClient();
+  if (!owner) return { error: "Chỉ chủ cửa hàng mới được quản lý danh mục." };
+  const { error } = await owner.supabase.rpc("owner_reactivate_inventory_item", { p_item_id: id.data });
+  if (error) return { error: "Chưa dùng lại được mặt hàng. Hãy tải lại trang và thử lại." };
+
+  revalidatePath("/inventory");
+  return { success: "Đã đưa mặt hàng trở lại danh sách kiểm." };
 }
 
 async function getInventoryAccess() {
@@ -161,7 +194,15 @@ export async function saveInventoryCountDraftAction(
     p_count_id: countId.data,
     p_quantities: [...quantities.values()],
   });
-  if (error) return { error: "Không thể lưu bản kiểm. Kiểm tra số lượng và quyền sửa ngày này." };
+  if (error) {
+    return {
+      error: error.message.includes("Package quantities must be whole numbers")
+        ? "Đơn vị đóng gói chỉ nhập số nguyên."
+        : error.message.includes("Fractions are allowed only for Gr and Ml")
+          ? "Chỉ Gr và Ml được nhập số lẻ."
+          : "Không thể lưu bản kiểm. Kiểm tra số lượng và quyền sửa ngày này.",
+    };
+  }
 
   revalidatePath(access.basePath);
   return { success: "Đã lưu bản nháp. Bản này chưa phải mốc tồn kho." };
@@ -183,10 +224,70 @@ export async function finalizeInventoryCountAction(
         ? "Hãy nhập số lượng cho tất cả mặt hàng trước khi chốt. Số 0 vẫn được tính là đã kiểm."
         : error.message.includes("recounted after the latest receipt")
           ? "Có hàng nhập sau lần đếm gần nhất. Hãy kiểm lại mặt hàng đó rồi chốt."
+          : error.message.includes("fractional package quantities")
+            ? "Đơn vị đóng gói chỉ nhập số nguyên; chỉ Gr và Ml được nhập số lẻ."
           : "Không thể chốt bản kiểm. Kiểm tra quyền truy cập và trạng thái bản kiểm.",
     };
   }
 
   revalidatePath(access.basePath);
   return { success: "Đã chốt bản kiểm. Phiếu nhập sau thời điểm này thuộc kỳ tiếp theo." };
+}
+
+export async function correctFinalizedInventoryCountAction(
+  _state: InventoryCountActionState,
+  formData: FormData,
+): Promise<InventoryCountActionState> {
+  const countId = idSchema.safeParse(formData.get("count_id"));
+  if (!countId.success) return { error: "Bản kiểm không hợp lệ." };
+
+  const reason = formData.get("reason");
+  if (typeof reason !== "string" || reason.trim().length === 0 || reason.trim().length > 500) {
+    return { error: "Hãy nhập lý do hiệu chỉnh (tối đa 500 ký tự)." };
+  }
+
+  const quantities = new Map<string, { item_id: string; large_quantity?: string | null; small_quantity?: string | null }>();
+  for (const [key, rawValue] of formData.entries()) {
+    const match = /^(large|small)_quantity_([0-9a-f-]{36})$/i.exec(key);
+    if (!match) continue;
+    if (typeof rawValue !== "string") return { error: "Số lượng không hợp lệ." };
+    const itemId = idSchema.safeParse(match[2]);
+    const value = rawValue.trim();
+    if (!itemId.success || (value !== "" && !quantitySchema.safeParse(value).success)) {
+      return { error: "Số lượng cần không âm và tối đa 3 chữ số thập phân." };
+    }
+    const entry = quantities.get(itemId.data) ?? { item_id: itemId.data };
+    const field = match[1] === "large" ? "large_quantity" : "small_quantity";
+    if (entry[field] !== undefined) return { error: "Số lượng mặt hàng bị lặp." };
+    entry[field] = value === "" ? null : value;
+    quantities.set(itemId.data, entry);
+  }
+  if (quantities.size === 0 || [...quantities.values()].some((entry) => entry.large_quantity === undefined || entry.small_quantity === undefined)) {
+    return { error: "Số lượng hiệu chỉnh không đầy đủ." };
+  }
+
+  const owner = await requireOwnerClient();
+  if (!owner) return { error: "Chỉ chủ cửa hàng mới được hiệu chỉnh bản kiểm đã chốt." };
+  const { error } = await owner.supabase.rpc("owner_correct_inventory_count", {
+    p_count_id: countId.data,
+    p_quantities: [...quantities.values()],
+    p_reason: reason.trim(),
+  });
+  if (error) {
+    return {
+      error: error.message.includes("correction reason")
+        ? "Hãy nhập lý do hiệu chỉnh."
+        : error.message.includes("remain complete")
+          ? "Bản kiểm sau hiệu chỉnh phải tiếp tục có đủ số đếm."
+          : error.message.includes("Package quantities must be whole numbers")
+            ? "Đơn vị đóng gói chỉ nhập số nguyên."
+            : error.message.includes("Fractions are allowed only for Gr and Ml")
+              ? "Chỉ Gr và Ml được nhập số lẻ."
+          : "Không thể hiệu chỉnh bản kiểm. Kiểm tra số lượng và quyền truy cập.",
+    };
+  }
+
+  revalidatePath("/inventory");
+  revalidatePath("/staff/inventory");
+  return { success: "Đã lưu hiệu chỉnh. Mốc chốt và ranh giới kỳ được giữ nguyên." };
 }

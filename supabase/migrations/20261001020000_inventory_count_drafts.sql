@@ -145,7 +145,7 @@ begin
   else
     v_owner_id := private.staff_owner_id();
     if v_owner_id is null or v_owner_id <> v_count.owner_id then raise exception 'Inventory access denied'; end if;
-    if v_count.business_date <> private.current_business_date_vn() then raise exception 'Staff can edit today's draft only'; end if;
+    if v_count.business_date <> private.current_business_date_vn() then raise exception 'Staff can edit today''s draft only'; end if;
   end if;
   if v_count.status <> 'draft' then raise exception 'Finalized counts cannot be edited'; end if;
   if jsonb_array_length(p_quantities) > (

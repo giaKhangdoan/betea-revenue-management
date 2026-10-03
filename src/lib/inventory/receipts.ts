@@ -8,12 +8,12 @@ export type InventoryReceiptLine = {
   item_id: string;
   item_name: string;
   category: string;
-  large_unit: string;
+  large_unit: string | null;
   large_quantity: string | number;
-  conversion_factor: string | number;
+  conversion_factor: string | number | null;
   small_unit: string;
   loose_quantity: string | number;
-  converted_quantity: string | number;
+  converted_quantity: string | number | null;
 };
 
 export type InventoryReceipt = {

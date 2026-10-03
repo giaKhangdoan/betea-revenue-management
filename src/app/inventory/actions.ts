@@ -79,6 +79,8 @@ export async function saveInventoryReceiptAction(
     return {
       error: result.error.message.includes("eligible for staff edit today")
         ? "Phiếu đã qua ngày được phép chỉnh sửa."
+        : result.error.message.includes("Receipt item unit configuration changed")
+          ? "Đơn vị hoặc quy cách của mặt hàng đã thay đổi từ lúc lập phiếu; không thể hiệu chỉnh phiếu cũ theo danh mục hiện tại."
         : result.error.message.includes("owner correction")
           ? "Phiếu đã nằm trong kỳ kiểm đã chốt; chỉ chủ cửa hàng mới được hiệu chỉnh."
         : "Chưa lưu được phiếu nhập. Hãy kiểm tra số lượng, quyền truy cập và thử lại.",
