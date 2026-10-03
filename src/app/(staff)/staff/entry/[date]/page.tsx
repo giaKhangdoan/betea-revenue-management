@@ -5,6 +5,7 @@ import { StaffExpenseManager } from "@/components/staff/staff-expense-manager";
 import { PhotoManager } from "@/components/ledger/photo-manager";
 import { addDays, currentBusinessDate, formatBusinessDate, weekStart } from "@/lib/finance/format";
 import { requireStaff } from "@/lib/auth/require-staff";
+import { createEvidencePhotoUrl } from "@/lib/storage/photo-url";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,12 @@ export default async function StaffEntryPage({ params }: { params: Promise<{ dat
   const [{ data: record }, { data: expenses }, { data: photoRows }] = await Promise.all([
     staff.supabase.from("daily_records").select("business_date,shift_06_10_vnd,shift_10_14_vnd,shift_14_18_vnd,shift_18_22_vnd,grab_vnd,shopee_vnd,grab_order_count,shopee_order_count,total_bill_count,electricity_morning_kwh,electricity_evening_kwh").eq("owner_id", staff.ownerId).eq("business_date", date).maybeSingle(),
     staff.supabase.from("daily_expenses").select("id,amount_vnd,reason,created_at").eq("owner_id", staff.ownerId).eq("business_date", date).is("deleted_at", null).order("created_at", { ascending: false }),
-    staff.supabase.from("day_photos").select("id,category,shift_code,object_path,caption,created_at").eq("owner_id", staff.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
+    staff.supabase.from("day_photos").select("id,category,shift_code,object_path,storage_provider,caption,created_at").eq("owner_id", staff.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
   ]);
   const editable = date === today;
   const photos = await Promise.all((photoRows ?? []).map(async (photo) => {
-    const { data } = await staff.supabase.storage.from("betea-evidence").createSignedUrl(photo.object_path, 300);
-    return data?.signedUrl ? { ...photo, signed_url: data.signedUrl } : null;
+    const signedUrl = await createEvidencePhotoUrl(staff.supabase, photo);
+    return signedUrl ? { ...photo, signed_url: signedUrl } : null;
   }));
 
   return <>

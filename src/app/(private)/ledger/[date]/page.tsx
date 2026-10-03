@@ -8,6 +8,7 @@ import { DeletedShiftHistory } from "@/components/ledger/deleted-shift-history";
 import { addDays, formatBusinessDate, formatVnd } from "@/lib/finance/format";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
+import { createEvidencePhotoUrl } from "@/lib/storage/photo-url";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +23,14 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
     loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: date, end: date }),
     loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: addDays(date, 1), end: addDays(date, 1) }),
     owner.supabase.from("daily_expenses").select("id,amount_vnd,reason,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).is("deleted_at", null).order("created_at", { ascending: false }),
-    owner.supabase.from("day_photos").select("id,category,shift_code,object_path,caption,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
+    owner.supabase.from("day_photos").select("id,category,shift_code,object_path,storage_provider,caption,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
     owner.supabase.from("daily_shift_deletions").select("id,shift_code,amount_vnd,deleted_at,restored_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("deleted_at", { ascending: false }),
   ]);
   const record = dayResult.data[0] ?? null;
   const expenses = expensesResult.data ?? [];
   const photos = await Promise.all((photosResult.data ?? []).map(async (photo) => {
-    const { data } = await owner.supabase.storage.from("betea-evidence").createSignedUrl(photo.object_path, 300);
-    return data?.signedUrl ? { ...photo, signed_url: data.signedUrl } : null;
+    const signedUrl = await createEvidencePhotoUrl(owner.supabase, photo);
+    return signedUrl ? { ...photo, signed_url: signedUrl } : null;
   }));
   const totalExpense = expenses.reduce((sum, item) => sum + Number(item.amount_vnd), 0);
 

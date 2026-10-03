@@ -11,6 +11,7 @@ type Photo = {
   category: string;
   shift_code: string | null;
   object_path: string;
+  storage_provider: "supabase" | "r2" | null;
   caption: string | null;
   signed_url: string;
 };
@@ -38,7 +39,6 @@ type ActivePhoto = {
 
 const TARGET_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_BATCH_SIZE = 20;
-const EVIDENCE_BUCKET = "betea-evidence";
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const categoryLabels: Record<string, string> = {
@@ -78,7 +78,7 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
     const previousPhotos = new Map(savedPhotosRef.current.map((photo) => [photo.id, photo]));
     const nextPhotos = initialPhotos.map((photo) => {
       const previousPhoto = previousPhotos.get(photo.id);
-      if (previousPhoto && previousPhoto.object_path === photo.object_path) {
+      if (previousPhoto && previousPhoto.object_path === photo.object_path && previousPhoto.storage_provider === photo.storage_provider) {
         return { ...photo, signed_url: previousPhoto.signed_url };
       }
       return photo;
@@ -149,17 +149,20 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
   async function renewPhotoUrl(photo: Photo) {
     if (photoRenewalRef.current.has(photo.id)) return;
     photoRenewalRef.current.add(photo.id);
+    try {
+      const response = await fetch(`/api/evidence/${encodeURIComponent(photo.id)}/url`, { cache: "no-store" });
+      const result = await response.json() as { url?: string };
+      if (!response.ok || !result.url) return;
 
-    const client = createBrowserClient();
-    if (!client) return;
-    const { data } = await client.storage.from(EVIDENCE_BUCKET).createSignedUrl(photo.object_path, 300);
-    if (!data?.signedUrl) return;
-
-    const nextPhotos = savedPhotosRef.current.map((item) => item.id === photo.id ? { ...item, signed_url: data.signedUrl } : item);
-    savedPhotosRef.current = nextPhotos;
-    setSavedPhotos(nextPhotos);
-    setActivePhoto((current) => current?.photoId === photo.id ? { ...current, url: data.signedUrl } : current);
-    photoRenewalRef.current.delete(photo.id);
+      const nextPhotos = savedPhotosRef.current.map((item) => item.id === photo.id ? { ...item, signed_url: result.url! } : item);
+      savedPhotosRef.current = nextPhotos;
+      setSavedPhotos(nextPhotos);
+      setActivePhoto((current) => current?.photoId === photo.id ? { ...current, url: result.url! } : current);
+    } catch {
+      // The image remains in its current state; another user action can retry later.
+    } finally {
+      photoRenewalRef.current.delete(photo.id);
+    }
   }
 
   function selectFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -212,36 +215,37 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
     if (!item) return;
 
     const preparedFile = item.preparedFile ?? await prepareImage(item.sourceFile);
-    const extension = preparedFile.type === "image/jpeg" ? "jpg" : preparedFile.type.split("/")[1];
-    const objectPath = item.objectPath ?? `${ownerId}/${date}/${crypto.randomUUID()}.${extension}`;
-    updateUploadItem(id, { preparedFile, objectPath, status: "uploading" });
+    updateUploadItem(id, { preparedFile, status: "uploading" });
 
-    // Check both stores before retrying so a response lost after a successful write
-    // cannot create another metadata row or upload the same image again.
-    const { data: existingPhoto, error: metadataLookupError } = await client.from("day_photos")
-      .select("id").eq("owner_id", ownerId).eq("object_path", objectPath).maybeSingle();
-    if (metadataLookupError) throw new Error("Chưa kiểm tra được ảnh đã lưu. Hãy thử lại sau.");
-
-    const folderPath = objectPath.slice(0, objectPath.lastIndexOf("/"));
-    const fileName = objectPath.slice(objectPath.lastIndexOf("/") + 1);
-    const { data: storedObjects, error: listError } = await client.storage.from(EVIDENCE_BUCKET)
-      .list(folderPath, { limit: 100, search: fileName });
-    if (listError) throw new Error("Chưa kiểm tra được tệp ảnh trong kho. Hãy thử lại sau.");
-    const objectAlreadyUploaded = storedObjects.some((object) => object.name === fileName);
-
-    // A metadata row without its private Storage object is not a saved photo.
-    // Restore that exact object path so the existing label continues to work.
-    if (!objectAlreadyUploaded) {
-      const { error: uploadError } = await client.storage.from(EVIDENCE_BUCKET).upload(objectPath, preparedFile, {
-        cacheControl: "86400", contentType: preparedFile.type, upsert: false,
-      });
-      if (uploadError) throw new Error("Tải ảnh lên thất bại. Hãy thử lại; ứng dụng sẽ kiểm tra tệp trước khi gửi lại.");
+    if (item.objectPath) {
+      const { data: existingPhoto, error: metadataLookupError } = await client.from("day_photos")
+        .select("id,storage_provider").eq("owner_id", ownerId).eq("object_path", item.objectPath).maybeSingle();
+      if (metadataLookupError) throw new Error("Chưa kiểm tra được ảnh đã lưu. Hãy thử lại sau.");
+      if (existingPhoto?.storage_provider === "r2") {
+        updateUploadItem(id, { status: "saved", message: undefined, retryable: false });
+        return;
+      }
+      if (existingPhoto) throw new Error("Đường dẫn ảnh đã được dùng cho một bản ghi khác. Hãy bỏ ảnh này và chọn lại.");
     }
 
-    if (existingPhoto) {
-      updateUploadItem(id, { status: "saved", message: undefined, retryable: false });
-      return;
+    const uploadUrlResponse = await fetch("/api/evidence/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, contentType: preparedFile.type, size: preparedFile.size, objectPath: item.objectPath }),
+    });
+    const uploadTicket = await uploadUrlResponse.json() as { objectPath?: string; uploadUrl?: string; contentType?: string; error?: string };
+    if (!uploadUrlResponse.ok || !uploadTicket.objectPath || !uploadTicket.uploadUrl || !uploadTicket.contentType) {
+      throw new Error(uploadTicket.error ?? "Chưa tạo được liên kết tải ảnh lên. Hãy thử lại.");
     }
+
+    const objectPath = uploadTicket.objectPath;
+    updateUploadItem(id, { objectPath });
+    const uploadResponse = await fetch(uploadTicket.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": uploadTicket.contentType },
+      body: preparedFile,
+    });
+    if (!uploadResponse.ok) throw new Error("Tải ảnh lên R2 thất bại. Hãy thử lại; ứng dụng sẽ dùng lại cùng đường dẫn ảnh.");
 
     updateUploadItem(id, { status: "saving" });
     const result = await addDayPhotoRecord({ date, category: metadata.category, shiftCode: metadata.shiftCode, objectPath, caption: metadata.caption });
@@ -251,19 +255,15 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
     }
 
     const { data: savedAfterError, error: recheckError } = await client.from("day_photos")
-      .select("id").eq("owner_id", ownerId).eq("object_path", objectPath).maybeSingle();
+      .select("id,storage_provider").eq("owner_id", ownerId).eq("object_path", objectPath).maybeSingle();
     if (recheckError) {
       throw new Error("Ảnh đã tải lên nhưng chưa xác nhận được nhãn. Hãy thử lại; ứng dụng sẽ kiểm tra trước khi gửi lại.");
     }
-    if (savedAfterError) {
+    if (savedAfterError?.storage_provider === "r2") {
       updateUploadItem(id, { status: "saved", message: undefined, retryable: false });
       return;
     }
-
-    const { error: cleanupError } = await client.storage.from(EVIDENCE_BUCKET).remove([objectPath]);
-    if (cleanupError) {
-      throw new Error(`${result.error} Tệp ảnh vẫn còn trong kho; hãy thử lại để lưu nhãn mà không tải ảnh lần nữa.`);
-    }
+    if (savedAfterError) throw new Error("Đường dẫn ảnh đã được dùng cho một bản ghi khác.");
     throw new Error(result.error);
   }
 
