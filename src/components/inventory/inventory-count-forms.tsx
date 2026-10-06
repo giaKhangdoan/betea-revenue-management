@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { finalizeInventoryCountAction, openInventoryCountAction, saveInventoryCountDraftAction, type InventoryCountActionState } from "@/app/(private)/inventory/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import type { InventoryCountItem } from "@/lib/inventory/counts";
-import { queueInventorySave } from "@/lib/inventory/autosave";
+import { collectInventoryDraftChanges, queueInventorySave } from "@/lib/inventory/autosave";
 import { formatCombinedQuantity, milli, preventInvalidQuantityKey, preventInvalidQuantityPaste, quantityAllowsFractional } from "@/lib/inventory/quantity-input";
 
 type InventoryCountNavigation = {
@@ -109,7 +109,7 @@ type CountField = "large" | "small";
 type CountQuantities = Record<string, { large: string; small: string }>;
 type DirtyCountFields = Record<string, Partial<Record<CountField, true>>>;
 
-export function InventoryCountEditor({ countId, items, editable, finalized = false }: { countId: string; items: InventoryCountItem[]; editable: boolean; finalized?: boolean }) {
+export function InventoryCountEditor({ countId, items, editable, finalized = false, needsRecountItemIds = [] }: { countId: string; items: InventoryCountItem[]; editable: boolean; finalized?: boolean; needsRecountItemIds?: string[] }) {
   const initial = Object.fromEntries(items.map((item) => [item.item_id, {
     large: item.large_quantity == null ? "" : String(item.large_quantity),
     small: item.small_quantity == null ? "" : String(item.small_quantity),
@@ -124,7 +124,9 @@ export function InventoryCountEditor({ countId, items, editable, finalized = fal
   const [saveError, setSaveError] = useState<string>();
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
   const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const recountItemIdsRef = useRef(new Set<string>());
   const categoryRefs = useRef(new Map<string, HTMLDetailsElement>());
+  const needsRecountItems = new Set(needsRecountItemIds);
   const missingItems = items.filter((item) => !isCounted(item, quantities[item.item_id]));
   const categories = [...items.reduce((groups, item) => {
     const category = item.category || "Chưa phân loại";
@@ -163,27 +165,20 @@ export function InventoryCountEditor({ countId, items, editable, finalized = fal
   }
 
   function collectDirtyQuantities() {
-    const nextDirty = Object.fromEntries(Object.entries(dirtyRef.current).map(([itemId, fields]) => [itemId, { ...fields }])) as DirtyCountFields;
-    const changes = new Map<string, { item_id: string; large_quantity?: string | null; small_quantity?: string | null }>();
+    const result = collectInventoryDraftChanges({
+      current: quantitiesRef.current,
+      saved: savedQuantitiesRef.current,
+      dirty: dirtyRef.current,
+      recountItemIds: recountItemIdsRef.current,
+    });
+    dirtyRef.current = result.dirty;
+    setDirty(result.dirty);
+    return result.changes;
+  }
 
-    for (const [itemId, fields] of Object.entries(nextDirty)) {
-      for (const field of ["large", "small"] as const) {
-        if (!fields[field]) continue;
-        const current = quantitiesRef.current[itemId][field];
-        if (current === savedQuantitiesRef.current[itemId][field]) {
-          delete fields[field];
-          continue;
-        }
-        const entry = changes.get(itemId) ?? { item_id: itemId };
-        entry[field === "large" ? "large_quantity" : "small_quantity"] = current === "" ? null : current;
-        changes.set(itemId, entry);
-      }
-      if (!fields.large && !fields.small) delete nextDirty[itemId];
-    }
-
-    dirtyRef.current = nextDirty;
-    setDirty(nextDirty);
-    return [...changes.values()];
+  function confirmItemRecount(itemId: string) {
+    recountItemIdsRef.current.add(itemId);
+    void flushChanges();
   }
 
   function flushChanges() {
@@ -220,6 +215,7 @@ export function InventoryCountEditor({ countId, items, editable, finalized = fal
       const nextSaved = { ...savedQuantitiesRef.current };
       const nextDirty = Object.fromEntries(Object.entries(dirtyRef.current).map(([itemId, fields]) => [itemId, { ...fields }])) as DirtyCountFields;
       for (const change of changes) {
+        recountItemIdsRef.current.delete(change.item_id);
         const saved = { ...nextSaved[change.item_id] };
         const fields = nextDirty[change.item_id];
         if (change.large_quantity !== undefined) {
@@ -289,6 +285,7 @@ export function InventoryCountEditor({ countId, items, editable, finalized = fal
           const large = milli(value.large);
           const small = milli(value.small);
           const counted = isCounted(item, value);
+          const needsRecount = needsRecountItems.has(item.item_id);
           const total = factor === null || large === null || small === null ? null : large * factor + small * BigInt(1000);
           const fractional = quantityAllowsFractional(item.small_unit);
           return <li className={`inventory-count-item${counted ? " inventory-count-item-counted" : ""}`} key={item.item_id}>
@@ -314,9 +311,15 @@ export function InventoryCountEditor({ countId, items, editable, finalized = fal
               setItemQuantity(item, { ...quantities[item.item_id], small: quantity });
               markDirty(item.item_id, "small");
             }} /></label> : null}
-            <div className="inventory-count-total"><span>Trạng thái</span><strong>{counted ? "Đã kiểm" : "Chưa kiểm"}</strong>
+            <div className="inventory-count-total"><span>Trạng thái</span><strong>{needsRecount ? "Cần kiểm lại" : counted ? "Đã kiểm" : "Chưa kiểm"}</strong>
               {counted && hasConversion && !countLargeUnitOnly && total !== null ? <small>Tổng: {formatMicro(total)} {item.small_unit}</small> : null}
             </div>
+            {needsRecount ? <div className="inventory-count-recheck">
+              <p>Có phiếu nhập sau lần kiểm. Hãy kiểm tra thực tế rồi xác nhận số lượng hiện tại.</p>
+              {editable ? <button className="button button-secondary" type="button" disabled={pendingSaves > 0} onClick={() => confirmItemRecount(item.item_id)}>
+                {pendingSaves > 0 ? "Đang lưu…" : "Tôi đã kiểm lại"}
+              </button> : null}
+            </div> : null}
           </li>;
         })}
             </ul>
@@ -331,7 +334,7 @@ export function InventoryCountEditor({ countId, items, editable, finalized = fal
     </form>
     {editable ? <FinalizeInventoryCountForm
       countId={countId}
-      complete={missingItems.length === 0 && pendingSaves === 0 && Object.keys(dirty).length === 0}
+      complete={missingItems.length === 0 && needsRecountItemIds.length === 0 && pendingSaves === 0 && Object.keys(dirty).length === 0}
     /> : null}
   </>;
 }

@@ -3,7 +3,7 @@ import { formatBusinessDate, monthStart } from "@/lib/finance/format";
 import type { InventoryItem } from "@/lib/inventory/catalog";
 import type { InventoryCatalogItem } from "@/lib/inventory/catalog";
 import type { InventoryReceipt } from "@/lib/inventory/receipts";
-import { formatInventoryQuantity, type InventoryCount, type InventoryCountItem, type InventoryMovementSummary } from "@/lib/inventory/counts";
+import { formatInventoryQuantity, getInventoryItemsNeedingRecount, type InventoryCount, type InventoryCountItem, type InventoryMovementSummary } from "@/lib/inventory/counts";
 import { InventoryReceivingPanel } from "@/components/inventory/inventory-receiving-panel";
 import { InventoryCountDashboardBackButton, InventoryCountEditor, InventoryCountNavigationProvider, OpenInventoryCountForm } from "@/components/inventory/inventory-count-forms";
 import { InventoryCatalogManager } from "@/components/inventory/inventory-catalog-manager";
@@ -103,6 +103,8 @@ export function InventoryWorkspace({
   countItems: InventoryCountItem[];
   countError: boolean;
 }) {
+  const needsRecountItemIds = tab === "stock" && count ? [...getInventoryItemsNeedingRecount(countItems, receipts, count.status === "draft")] : [];
+
   return <InventoryCountNavigationProvider destination={owner ? "/" : "/staff/dashboard"}><>
     <div className="page-heading">
       <div className="inventory-page-heading-title"><InventoryCountDashboardBackButton /><div><p className="eyebrow">QUẢN LÝ CỬA HÀNG</p><h1>Kho</h1><p>Danh mục hàng hóa và các đơn vị quy đổi.</p></div></div>
@@ -141,7 +143,7 @@ export function InventoryWorkspace({
               ? `Đã chốt lúc ${formatInventoryTimestamp(count.finalized_at)}.`
               : "Bản kiểm đã chốt."
             : "Bản nháp chưa phải mốc tồn kho."}</p>
-          <InventoryCountEditor key={count.id} countId={count.id} items={countItems} editable={count.status === "draft" && (owner || date === today)} finalized={count.status === "finalized"} />
+          <InventoryCountEditor key={count.id} countId={count.id} items={countItems} editable={count.status === "draft" && (owner || date === today)} finalized={count.status === "finalized"} needsRecountItemIds={needsRecountItemIds} />
         </> : <>
           <div className="section-heading"><div><h2>Chưa mở bản kiểm</h2><p>{formatBusinessDate(date, { day: "numeric", month: "long", year: "numeric" })} · {items.length} mặt hàng đang hoạt động</p></div></div>
           {owner || date === today ? <OpenInventoryCountForm date={date} /> : <p className="form-note">Nhân viên chỉ mở bản kiểm cho ngày hôm nay.</p>}

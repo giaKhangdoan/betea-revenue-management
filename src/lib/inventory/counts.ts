@@ -1,4 +1,5 @@
 import type { createClient } from "@/lib/supabase/server";
+import type { InventoryReceipt } from "@/lib/inventory/receipts";
 
 type ServerSupabaseClient = NonNullable<Awaited<ReturnType<typeof createClient>>>;
 
@@ -107,6 +108,29 @@ export function compareInventoryTimestamps(a: string, b: string): number {
   if (left === null) return right === null ? 0 : -1;
   if (right === null) return 1;
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function getInventoryItemsNeedingRecount(items: InventoryCountItem[], receipts: InventoryReceipt[], isDraft: boolean): Set<string> {
+  if (!isDraft) return new Set();
+
+  const latestReceiptActivity = new Map<string, string>();
+  for (const receipt of receipts) {
+    const activityAt = compareInventoryTimestamps(receipt.received_at, receipt.updated_at) >= 0
+      ? receipt.received_at
+      : receipt.updated_at;
+    for (const line of receipt.lines) {
+      const latest = latestReceiptActivity.get(line.item_id);
+      if (!latest || compareInventoryTimestamps(activityAt, latest) > 0) {
+        latestReceiptActivity.set(line.item_id, activityAt);
+      }
+    }
+  }
+
+  return new Set(items.filter((item) => {
+    if (!item.counted_at) return false;
+    const receiptActivityAt = latestReceiptActivity.get(item.item_id);
+    return Boolean(receiptActivityAt && compareInventoryTimestamps(receiptActivityAt, item.counted_at) > 0);
+  }).map((item) => item.item_id));
 }
 
 export function formatInventoryQuantity(value: string | number | null): string | null {

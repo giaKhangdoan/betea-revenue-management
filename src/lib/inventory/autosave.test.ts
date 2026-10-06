@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { queueInventorySave } from "./autosave";
+import { collectInventoryDraftChanges, queueInventorySave } from "./autosave";
+
+describe("collectInventoryDraftChanges", () => {
+  it("submits unchanged quantities for an explicit recount and keeps ordinary unchanged fields out", () => {
+    const result = collectInventoryDraftChanges({
+      current: {
+        same: { large: "", small: "0" },
+        changed: { large: "2", small: "" },
+      },
+      saved: {
+        same: { large: "", small: "0" },
+        changed: { large: "1", small: "" },
+      },
+      dirty: {
+        same: { small: true },
+        changed: { large: true },
+      },
+      recountItemIds: ["same"],
+    });
+
+    expect(result.changes).toEqual([
+      { item_id: "same", large_quantity: null, small_quantity: "0" },
+      { item_id: "changed", large_quantity: "2" },
+    ]);
+    expect(result.dirty).toEqual({ changed: { large: true } });
+  });
+});
 
 describe("queueInventorySave", () => {
   it("waits for an in-flight save before starting the next one", async () => {

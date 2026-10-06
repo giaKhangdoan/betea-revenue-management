@@ -17,8 +17,8 @@ values
   ('50000000-0000-4000-8000-000000000002', '40000000-0000-4000-8000-000000000003');
 select private.seed_inventory_catalog_for_owner('40000000-0000-4000-8000-000000000001');
 
-select ok(has_function_privilege('authenticated', 'public.owner_create_inventory_item(text,text,text,numeric,text)', 'EXECUTE'), 'authenticated callers reach the guarded owner create RPC');
-select ok(not has_function_privilege('anon', 'public.owner_create_inventory_item(text,text,text,numeric,text)', 'EXECUTE'), 'anonymous callers cannot invoke catalog writes');
+select ok(has_function_privilege('authenticated', 'public.owner_create_inventory_item(text,text,text,numeric,text,boolean)', 'EXECUTE'), 'authenticated callers reach the guarded owner create RPC');
+select ok(not has_function_privilege('anon', 'public.owner_create_inventory_item(text,text,text,numeric,text,boolean)', 'EXECUTE'), 'anonymous callers cannot invoke catalog writes');
 select ok(not has_table_privilege('authenticated', 'public.inventory_items', 'INSERT'), 'catalog writes cannot bypass the owner RPC');
 select ok(not has_table_privilege('authenticated', 'public.inventory_items', 'UPDATE'), 'catalog updates cannot bypass the owner RPC');
 select ok(not has_table_privilege('authenticated', 'public.inventory_items', 'DELETE'), 'catalog history cannot be deleted directly');
@@ -32,7 +32,12 @@ select is((select count(*) from public.inventory_count_items where count_id = (s
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '40000000-0000-4000-8000-000000000002', true);
-select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"50000000-0000-4000-8000-000000000001"}', true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', '40000000-0000-4000-8000-000000000002',
+  'role', 'authenticated',
+  'session_id', '50000000-0000-4000-8000-000000000001',
+  'iat', extract(epoch from now())::bigint
+)::text, true);
 select public.staff_create_inventory_receipt(jsonb_build_array(jsonb_build_object(
   'item_id', (select id::text from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'),
   'large_quantity', '1', 'loose_quantity', '0'
@@ -45,7 +50,7 @@ select set_config('request.jwt.claim.sub', '40000000-0000-4000-8000-000000000001
 select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 select public.owner_update_inventory_item(
   (select id from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'),
-  'Đường cập nhật', 'Nguyên liệu', 'Chai', 500, 'Ml'
+  'Đường cập nhật', 'Nguyên liệu', 'Chai', 500, 'Ml', false
 );
 reset role;
 select is((select name from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'), 'Đường cập nhật', 'owner can edit a catalog item');
@@ -59,7 +64,7 @@ do $$ begin
   begin
     perform public.owner_update_inventory_item(
       (select id from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'),
-      'Đường cập nhật', 'Nguyên liệu', 'Chai', 1.0001, 'Ml'
+      'Đường cập nhật', 'Nguyên liệu', 'Chai', 1.0001, 'Ml', false
     );
     raise exception 'conversion factor with more than three decimals was accepted';
   exception when sqlstate '22023' then null;
@@ -67,18 +72,18 @@ do $$ begin
   begin
     perform public.owner_update_inventory_item(
       (select id from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'),
-      'Đường cập nhật', 'Nguyên liệu', ' ', 500, 'Ml'
+      'Đường cập nhật', 'Nguyên liệu', ' ', 500, 'Ml', false
     );
     raise exception 'blank unit was accepted';
-  exception when check_violation then null;
+  exception when sqlstate '22023' then null;
   end;
   begin
     perform public.owner_update_inventory_item(
       (select id from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'),
-      'Đường cập nhật', 'Nguyên liệu', 'Hộp', 0.5, 'Cái'
+      'Đường cập nhật', 'Nguyên liệu', 'Hộp', 0.5, 'Cái', false
     );
     raise exception 'fractional conversion factor for indivisible unit was accepted';
-  exception when check_violation then null;
+  exception when sqlstate '22023' then null;
   end;
 end $$;
 reset role;
@@ -87,7 +92,7 @@ select pass('database rejects invalid conversion factors, blank units, and fract
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '40000000-0000-4000-8000-000000000001', true);
 select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
-select public.owner_create_inventory_item('New item', 'Vật tư', 'Hộp', 4, 'Cái');
+select public.owner_create_inventory_item('New item', 'Vật tư', 'Hộp', 4, 'Cái', false);
 select public.owner_deactivate_inventory_item((select id from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'));
 select public.open_inventory_count(current_date - 1);
 reset role;
@@ -103,10 +108,15 @@ select ok(not exists (
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '40000000-0000-4000-8000-000000000002', true);
-select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"50000000-0000-4000-8000-000000000001"}', true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', '40000000-0000-4000-8000-000000000002',
+  'role', 'authenticated',
+  'session_id', '50000000-0000-4000-8000-000000000001',
+  'iat', extract(epoch from now())::bigint
+)::text, true);
 do $$ begin
   begin
-    perform public.owner_create_inventory_item('Unauthorized', 'Vật tư', 'Gói', 1, 'Gói');
+    perform public.owner_create_inventory_item('Unauthorized', 'Vật tư', 'Gói', 1, 'Gói', false);
     raise exception 'active staff unexpectedly changed the catalog';
   exception when insufficient_privilege then null;
   end;
@@ -116,7 +126,12 @@ select pass('active staff cannot change the catalog through a direct RPC call');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '40000000-0000-4000-8000-000000000003', true);
-select set_config('request.jwt.claims', '{"sub":"40000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"50000000-0000-4000-8000-000000000002"}', true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', '40000000-0000-4000-8000-000000000003',
+  'role', 'authenticated',
+  'session_id', '50000000-0000-4000-8000-000000000002',
+  'iat', extract(epoch from now())::bigint
+)::text, true);
 do $$ begin
   begin
     perform public.owner_deactivate_inventory_item((select id from public.inventory_items where owner_id = '40000000-0000-4000-8000-000000000001' and source_code = '001'));

@@ -19,7 +19,7 @@ select private.seed_inventory_catalog_for_owner('50000000-0000-4000-8000-0000000
 
 update public.inventory_items set active = false where owner_id = '50000000-0000-4000-8000-000000000001';
 update public.inventory_items set active = true
-where owner_id = '50000000-0000-4000-8000-000000000001' and source_code in ('001', '006');
+where owner_id = '50000000-0000-4000-8000-000000000001' and source_code in ('001', '016');
 
 select ok(to_regprocedure('public.finalize_inventory_count(uuid)') is not null, 'finalization is exposed as a database function');
 select ok(not has_function_privilege('anon', 'public.finalize_inventory_count(uuid)', 'EXECUTE'), 'anonymous users cannot call finalization');
@@ -39,7 +39,7 @@ declare
   v_count_id uuid;
   v_receipt_id uuid;
   v_item_sugar uuid := (select id from public.inventory_items where owner_id = '50000000-0000-4000-8000-000000000001' and source_code = '001');
-  v_item_pack uuid := (select id from public.inventory_items where owner_id = '50000000-0000-4000-8000-000000000001' and source_code = '006');
+  v_item_pack uuid := (select id from public.inventory_items where owner_id = '50000000-0000-4000-8000-000000000001' and source_code = '016');
 begin
   v_count_id := public.open_inventory_count(private.current_business_date_vn());
   perform set_config('test.count_id', v_count_id::text, true);
@@ -107,7 +107,7 @@ select pass('finalized count and included receipt reject staff edits');
 
 do $$
 declare
-  v_item_pack uuid := (select id from public.inventory_items where owner_id = '50000000-0000-4000-8000-000000000001' and source_code = '006');
+  v_item_pack uuid := (select id from public.inventory_items where owner_id = '50000000-0000-4000-8000-000000000001' and source_code = '016');
   v_receipt_id uuid;
 begin
   v_receipt_id := public.staff_create_inventory_receipt(jsonb_build_array(

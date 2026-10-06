@@ -25,8 +25,8 @@ select ok(not has_table_privilege('anon', 'public.inventory_items', 'SELECT'), '
 select ok(exists (
   select 1 from pg_policies
   where schemaname = 'public' and tablename = 'inventory_items'
-    and policyname = 'active store members read inventory catalog'
-    and qual like '%is_active_store_member%'
+    and qual like '%private.is_active_store_member%'
+    and qual like '%active%'
 ), 'staff reads require active membership');
 select ok(exists (
   select 1 from pg_trigger

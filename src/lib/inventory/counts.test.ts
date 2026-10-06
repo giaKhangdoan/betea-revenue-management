@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { formatInventoryQuantity, summarizeInventoryMovement, type InventoryFinalizedCount, type InventoryMovementReceipt } from "./counts";
+import { formatInventoryQuantity, getInventoryItemsNeedingRecount, summarizeInventoryMovement, type InventoryFinalizedCount, type InventoryMovementReceipt } from "./counts";
+import type { InventoryCountItem } from "./counts";
+import type { InventoryReceipt } from "./receipts";
 
 describe("inventory movement", () => {
   it("uses the exclusive previous and inclusive next cutoff with exact signed quantities", () => {
@@ -93,5 +95,61 @@ describe("inventory movement", () => {
       movement_sign: null,
       conversion_unavailable: true,
     });
+  });
+});
+
+describe("inventory recount requirements", () => {
+  it("flags an item when a receipt was created or corrected after its saved count", () => {
+    const makeItem = (itemId: string, countedAt: string | null): InventoryCountItem => ({
+      item_id: itemId,
+      item_name: itemId,
+      category: "Nguyên liệu",
+      large_unit: null,
+      conversion_factor: null,
+      small_unit: "Kg",
+      large_quantity: null,
+      small_quantity: "0",
+      counted_quantity: "0",
+      counted_at: countedAt,
+    });
+    const makeReceipt = (itemId: string, receivedAt: string, updatedAt: string): InventoryReceipt => ({
+      id: `receipt-${itemId}`,
+      receipt_code: `PN-${itemId}`,
+      received_at: receivedAt,
+      updated_at: updatedAt,
+      created_by: "owner",
+      created_by_label: "Chủ",
+      staff_editable: true,
+      lines: [{
+        id: `line-${itemId}`,
+        receipt_id: `receipt-${itemId}`,
+        item_id: itemId,
+        item_name: itemId,
+        category: "Nguyên liệu",
+        large_unit: null,
+        large_quantity: "0",
+        conversion_factor: null,
+        small_unit: "Kg",
+        loose_quantity: "1",
+        converted_quantity: "1",
+      }],
+      corrections: [],
+    });
+
+    const items = [
+      makeItem("received-later", "2026-10-06T09:00:00.000Z"),
+      makeItem("corrected-later", "2026-10-06T09:00:00.000Z"),
+      makeItem("same-cutoff", "2026-10-06T11:00:00.000Z"),
+      makeItem("not-counted", null),
+    ];
+    const receipts = [
+      makeReceipt("received-later", "2026-10-06T10:00:00.000Z", "2026-10-06T10:00:00.000Z"),
+      makeReceipt("corrected-later", "2026-10-06T08:00:00.000Z", "2026-10-06T10:00:00.000Z"),
+      makeReceipt("same-cutoff", "2026-10-06T11:00:00.000Z", "2026-10-06T11:00:00.000Z"),
+      makeReceipt("not-counted", "2026-10-06T10:00:00.000Z", "2026-10-06T10:00:00.000Z"),
+    ];
+
+    expect([...getInventoryItemsNeedingRecount(items, receipts, true)]).toEqual(["received-later", "corrected-later"]);
+    expect([...getInventoryItemsNeedingRecount(items, receipts, false)]).toEqual([]);
   });
 });

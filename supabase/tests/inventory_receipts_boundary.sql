@@ -1,5 +1,5 @@
 begin;
-select plan(24);
+select plan(25);
 
 insert into auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data)
 values
@@ -41,7 +41,7 @@ declare
   v_first uuid;
   v_second uuid;
   v_item_kg uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '001');
-  v_item_pack uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '006');
+  v_item_pack uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '016');
 begin
   v_first := public.staff_create_inventory_receipt(jsonb_build_array(
     jsonb_build_object('item_id', v_item_kg::text, 'large_quantity', '2', 'loose_quantity', '500'),
@@ -82,16 +82,19 @@ begin
   if not exists (select 1 from public.inventory_receipt_lines where receipt_id = v_first and converted_quantity = 3100) then
     raise exception 'today receipt did not update';
   end if;
-  if not exists (
-    select 1 from public.inventory_receipt_corrections
-    where receipt_id = v_first and corrected_by = auth.uid() and corrected_by_label = 'Receipt staff'
-      and reason = 'Corrected delivery quantity' and prior_lines @> '[{"converted_quantity":2500}]'::jsonb
-  ) then raise exception 'staff receipt correction history is incomplete'; end if;
   if (select count(*) from public.inventory_receipt_corrections) <> 0 then raise exception 'staff read owner-only correction history'; end if;
 end $$;
+reset role;
+select ok(exists (
+  select 1 from public.inventory_receipt_corrections
+  where receipt_id = current_setting('test.first_receipt_id')::uuid
+    and corrected_by = '30000000-0000-4000-8000-000000000002'
+    and corrected_by_label = 'Receipt staff'
+    and reason = 'Corrected delivery quantity'
+    and prior_lines @> '[{"converted_quantity":2500}]'::jsonb
+), 'staff correction history records the actor, reason and prior quantities');
 select pass('staff updates a receipt created today with prior values and reason in owner-only history');
 
-reset role;
 insert into public.inventory_counts (owner_id, business_date, status, created_by, updated_by, finalized_by, finalized_at)
 values (
   '30000000-0000-4000-8000-000000000001',
@@ -128,7 +131,7 @@ select pass('staff cannot edit a receipt included in a finalized count');
 
 reset role;
 update public.inventory_items set active = false
-where owner_id = '30000000-0000-4000-8000-000000000001' and source_code in ('001', '006');
+where owner_id = '30000000-0000-4000-8000-000000000001' and source_code in ('001', '016');
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '30000000-0000-4000-8000-000000000001', true);
 select set_config('request.jwt.claims', '{"sub":"30000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
@@ -136,7 +139,7 @@ do $$
 declare
   v_first uuid := current_setting('test.first_receipt_id')::uuid;
   v_item_kg uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '001');
-  v_item_pack uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '006');
+  v_item_pack uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '016');
 begin
   begin
     perform public.owner_correct_inventory_receipt(v_first, jsonb_build_array(
@@ -162,6 +165,14 @@ begin
 end $$;
 select pass('owner corrects a receipt after count finalization with reason and retained values');
 
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '30000000-0000-4000-8000-000000000002', true);
+select set_config('request.jwt.claims', jsonb_build_object(
+  'sub', '30000000-0000-4000-8000-000000000002',
+  'role', 'authenticated',
+  'session_id', '40000000-0000-4000-8000-000000000001',
+  'iat', extract(epoch from now())::bigint
+)::text, true);
 do $$
 begin
   begin
@@ -186,7 +197,7 @@ select pass('negative quantities are rejected');
 
 do $$
 declare
-  v_item uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '006');
+  v_item uuid := (select id from public.inventory_items where owner_id = '30000000-0000-4000-8000-000000000001' and source_code = '016');
 begin
   begin
     perform public.staff_create_inventory_receipt(jsonb_build_array(jsonb_build_object('item_id', v_item::text, 'large_quantity', '1', 'loose_quantity', '0.5')));
@@ -214,11 +225,11 @@ declare
 begin
   begin
     perform public.staff_create_inventory_receipt(jsonb_build_array(jsonb_build_object('item_id', v_item::text, 'large_quantity', '99999999999999999', 'loose_quantity', '0')));
-    raise exception 'overflowing converted quantity unexpectedly succeeded';
-  exception when sqlstate '22003' then null;
+    raise exception 'out-of-range quantity unexpectedly succeeded';
+  exception when sqlstate '22023' then null;
   end;
 end $$;
-select pass('converted quantities that overflow the stored range are rejected');
+select pass('out-of-range receipt quantities are rejected');
 
 do $$
 begin
@@ -246,7 +257,7 @@ select set_config('request.jwt.claims', jsonb_build_object(
 do $$
 begin
   if (select count(*) from public.inventory_receipts) <> 1 then raise exception 'staff saw a receipt outside the current week'; end if;
-  if (select count(*) from public.inventory_receipt_lines) <> 2 then raise exception 'staff saw lines outside the current week'; end if;
+  if (select count(*) from public.inventory_receipt_lines) <> 1 then raise exception 'staff saw lines outside the current week'; end if;
 end $$;
 select pass('staff reads only current-week receipt headers and lines');
 
