@@ -41,6 +41,7 @@ yarn-error.log*
 .owner-setup-secret
 .supabase/
 /supabase/.temp/
+/.tmp-sop-verification-*/
 .betea-local-data/
 /private-backups/
 plans/.current-brainstorm.md
