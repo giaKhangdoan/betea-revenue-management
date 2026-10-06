@@ -108,5 +108,65 @@
     "verification_command": "Role/date/API/Storage checks, owner financial regression, migration reconciliation, lint/typecheck/tests/build/advisors, and preview/production smoke all pass.",
     "notes": "Covers stories: US-01 through US-09",
     "priority": "P1"
+  },
+  {
+    "id": "phase-01-audit-workbook-canva-gates",
+    "title": "Audit workbook và gate Canva",
+    "status": "active",
+    "evidence": "Read-only workbook mapping saved at plans/recipe-cost-sop-canva/workbook-mapping.md: 44 sheets, 457 cached formula errors, 17 external-workbook formulas, 186 suspicious row lookups, unresolved unit/yield differences, and 19 product sheets outside Menu. Canva copy saved at canva-feasibility.md; original untouched, but Autofill/OAuth/URL preservation remain unverified and the design footer claims UNI ownership. Owner review required before Phase 02.",
+    "user_visible_behavior": "Workbook được đối soát theo nguyên liệu, cốt, menu và công thức; Canva được thử trên bản sao riêng trước khi bật tích hợp.",
+    "verification_command": "Mọi dòng có dữ liệu được map hoặc gắn lỗi; test Canva không sửa mẫu gốc và ghi nhận quyền Autofill/OAuth, job status, URL trước/sau.",
+    "notes": "Covers stories: US-05, US-07",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-02-schema-cost-engine",
+    "title": "Schema và cost engine",
+    "status": "passing",
+    "evidence": "39 unit tests pass; typecheck, lint and production build pass; isolated Supabase migration applied and all 24 owner/staff/anon, revision and snapshot pgTAP assertions pass. No production database changed.",
+    "user_visible_behavior": "Cost theo đơn vị cho nguyên liệu, cốt và từng size được tính riêng, lưu lịch sử bất biến nhưng chỉ hiện khi mở Lịch sử.",
+    "verification_command": "Ví dụ 1kg trà 200.000đ: 50g cost 10.000đ; yield 200g cost 50đ/g; owner-only RLS; COGS POS không đổi.",
+    "notes": "Covers stories: US-01, US-02, US-03, US-04, US-08",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-03-owner-cost-workspace-import",
+    "title": "Màn hình quản lý và import workbook",
+    "status": "active",
+    "evidence": "Local owner workspace/import implementation: 64 tests, typecheck, lint, build and production dependency audit pass; read-only code review 10/10 with no remaining findings. Real workbook dry-run (source file not stored): 16 safe raw-ingredient candidates totaling 2,274,576 VND; 972 review items including 965 recipe/source warnings; no recipe/base import and canMarkComplete=false. No production DB import or deploy. Phase remains active at hard-mode owner review; five representative S/M/L reconciliations remain blocked by unresolved source formulas/units.",
+    "user_visible_behavior": "Owner sửa nguyên liệu, công thức bán thành phẩm, món S/M/L, xem breakdown và import Excel có báo cáo đối soát.",
+    "verification_command": "Import dry-run không ghi DB; chỉ nhập dữ liệu mapped sau xác nhận; cost phụ thuộc cập nhật trong ≤2 giây trên workbook hiện tại.",
+    "notes": "Covers stories: US-01, US-02, US-03, US-04, US-07, US-08",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-04-sop-staff-safe-view",
+    "title": "Biên tập SOP và màn hình staff an toàn",
+    "status": "passing",
+    "evidence": "Owner editor, revision-checked draft save/publish and allowlisted staff SOP projection implemented. Verification: 76 unit tests and all 139 pgTAP assertions across 7 SQL files pass on clean isolated local Supabase; lint, typecheck, production build and read-only code review pass. Recount follow-up exposes explicit same-value recheck for draft inventory counts, and finalized counts are not marked stale. No production migration or deployment.",
+    "user_visible_behavior": "Owner biên tập SOP gắn với recipe; staff chỉ xem hướng dẫn và định lượng pha, không nhận dữ liệu cost.",
+    "verification_command": "Staff chỉ đọc SOP được phép; truy cập trực tiếp API/route không trả giá mua, cost, lãi hoặc lịch sử.",
+    "notes": "Covers stories: US-05, US-06",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-05-canva-draft-sync",
+    "title": "Đồng bộ bản nháp Canva",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "Sau khi lưu SOP, Betea cập nhật bản sao Canva và cho owner mở kiểm tra rồi tự bấm Publish.",
+    "verification_command": "Design gốc không đổi; payload không có cost; owner publish thủ công; URL nhân viên giữ nguyên hoặc rollout dừng.",
+    "notes": "Covers stories: US-05",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-06-security-validation-rollout",
+    "title": "Kiểm chứng quyền và rollout",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "Cost và lịch sử chỉ quản lý xem được; công thức đối chiếu với workbook và thay đổi được phát hành an toàn.",
+    "verification_command": "RLS role matrix pass; 5 công thức đại diện đối chiếu; typecheck/lint/test/build pass; owner kiểm tra và tự publish Canva.",
+    "notes": "Covers stories: US-01, US-02, US-03, US-04, US-05, US-06, US-07, US-08",
+    "priority": "P1"
   }
 ]

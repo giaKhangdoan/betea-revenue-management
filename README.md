@@ -27,3 +27,9 @@ Sổ hiện có các ngày đã ghi trong workbook từ 03/09 đến 25/09/2026.
 - Chi phí phát sinh ghi ngày, số tiền và lý do; ảnh lưu ở bucket private theo ngày/ca.
 
 Chi tiết yêu cầu và các điểm quyết định còn chờ nằm trong `plans/betea-revenue-management/`.
+
+## Cost công thức và SOP
+
+Quản lý cấu hình nguyên liệu, cốt/bán thành phẩm, công thức theo size S/M/L và giá bán trong `/product-costs`. Lịch sử cost chỉ xem tại `/product-costs/history`; phần này độc lập với COGS tháng lấy từ POS. Nhập workbook có bước đối soát; dữ liệu chưa rõ mapping chưa được xem là đã nhập hoàn tất.
+
+Quản lý sửa và xem trước hướng dẫn pha tại `/sop`, rồi chủ động xuất bản bản SOP an toàn cho nhân viên xem tại `/staff/sop`. Nhân viên chỉ nhận nội dung và định lượng pha, không nhận giá mua, cost, giá bán hoặc lợi nhuận. Đồng bộ với Canva chưa được bật; xem [hướng dẫn cost và SOP](docs/recipe-costs-and-sop.md) trước khi thay đổi dữ liệu hoặc quyền truy cập.

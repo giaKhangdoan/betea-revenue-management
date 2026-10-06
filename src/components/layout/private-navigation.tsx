@@ -7,6 +7,8 @@ const navigationItems = [
   { href: "/", label: "Tổng quan" },
   { href: "/ledger", label: "Sổ ngày" },
   { href: "/inventory", label: "Kho" },
+  { href: "/product-costs", label: "Giá vốn món" },
+  { href: "/sop", label: "SOP pha chế" },
   { href: "/costs", label: "Chi phí tháng" },
   { href: "/reports", label: "Báo cáo" },
   { href: "/audit", label: "Lịch sử" },
