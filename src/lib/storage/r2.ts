@@ -1,6 +1,6 @@
 import "server-only";
 
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 type R2Context = { bucket: string; client: S3Client };
@@ -80,6 +80,80 @@ export async function createR2ReadUrl(key: string) {
     new GetObjectCommand({ Bucket: context.bucket, Key: key }),
     { expiresIn: 300 },
   );
+}
+
+export async function headR2Object(key: string) {
+  const context = getR2Context();
+  if (!context) throw new Error("R2 evidence storage is not configured.");
+
+  try {
+    const result = await context.client.send(new HeadObjectCommand({ Bucket: context.bucket, Key: key }));
+    return {
+      contentLength: typeof result.ContentLength === "number" ? result.ContentLength : null,
+      contentType: result.ContentType?.split(";")[0]?.trim().toLowerCase() ?? null,
+    };
+  } catch (error) {
+    const response = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (response.name === "NotFound" || response.name === "NoSuchKey" || response.$metadata?.httpStatusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function isPreconditionFailed(error: unknown) {
+  const response = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return response.name === "PreconditionFailed" || response.$metadata?.httpStatusCode === 412;
+}
+
+/**
+ * Seal an uploaded staging object into a server-only key. R2's conditional PUT
+ * means concurrent/retried finalization can never replace the first sealed bytes.
+ */
+export async function sealR2Object(
+  sourceKey: string,
+  sealedKey: string,
+  contentType: string,
+  contentLength: number,
+) {
+  const context = getR2Context();
+  if (!context) throw new Error("R2 evidence storage is not configured.");
+  if (contentLength < 1 || contentLength > 2 * 1024 * 1024) {
+    throw new Error("R2 evidence object size is outside the allowed range.");
+  }
+
+  const validateSealedObject = (object: Awaited<ReturnType<typeof headR2Object>>) => {
+    if (!object || object.contentLength !== contentLength || object.contentType !== contentType) {
+      throw new Error("R2 sealed evidence does not match the expected metadata.");
+    }
+    return object;
+  };
+
+  const existing = await headR2Object(sealedKey);
+  if (existing) return validateSealedObject(existing);
+
+  const source = await context.client.send(new GetObjectCommand({ Bucket: context.bucket, Key: sourceKey }));
+  if (!source.Body || source.ContentLength !== contentLength || source.ContentType?.split(";")[0]?.trim().toLowerCase() !== contentType) {
+    throw new Error("R2 staging evidence does not match the expected metadata.");
+  }
+  const bytes = Buffer.from(await source.Body.transformToByteArray());
+  if (bytes.byteLength !== contentLength) throw new Error("R2 staging evidence has an unexpected byte length.");
+
+  try {
+    await context.client.send(new PutObjectCommand({
+      Bucket: context.bucket,
+      Key: sealedKey,
+      Body: bytes,
+      ContentLength: contentLength,
+      ContentType: contentType,
+      IfNoneMatch: "*",
+    }));
+  } catch (error) {
+    if (!isPreconditionFailed(error)) throw error;
+    // Another finalization already sealed these bytes. Never replace them.
+  }
+
+  return validateSealedObject(await headR2Object(sealedKey));
 }
 
 export async function deleteR2Object(key: string) {

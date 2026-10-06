@@ -3,7 +3,35 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createInventoryWorkbook, type InventoryExportData } from "./export";
+import { createInventoryWorkbook, getInventoryExportData, getInventoryReceiptEventIdsBetween, isInventoryExportRangeWithinLimit, type InventoryExportData } from "./export";
+
+type QueryLog = { table: string; filters: [string, string, unknown?][] };
+
+function createEmptyExportSupabase() {
+  const queries: QueryLog[] = [];
+  const client = {
+    from(table: string) {
+      const log: QueryLog = { table, filters: [] };
+      queries.push(log);
+      const query = {
+        select: (columns: string) => { log.filters.push(["select", columns]); return query; },
+        eq: (column: string, value: unknown) => { log.filters.push(["eq", column, value]); return query; },
+        gte: (column: string, value: unknown) => { log.filters.push(["gte", column, value]); return query; },
+        lte: (column: string, value: unknown) => { log.filters.push(["lte", column, value]); return query; },
+        lt: (column: string, value: unknown) => { log.filters.push(["lt", column, value]); return query; },
+        not: (column: string, operator: string, value: unknown) => { log.filters.push(["not", column, `${operator}:${value}`]); return query; },
+        order: (column: string) => { log.filters.push(["order", column]); return query; },
+        range: (from: number, to: number) => { log.filters.push(["range", String(from), to]); return query; },
+        limit: (value: number) => { log.filters.push(["limit", String(value)]); return query; },
+        in: (column: string, value: unknown) => { log.filters.push(["in", column, value]); return query; },
+        then: (resolve: (value: { data: unknown[]; error: null }) => unknown, reject?: (reason: unknown) => unknown) =>
+          Promise.resolve({ data: [], error: null }).then(resolve, reject),
+      };
+      return query;
+    },
+  };
+  return { client: client as never, queries };
+}
 
 function readStoredZip(buffer: Buffer) {
   const files = new Map<string, string>();
@@ -32,6 +60,117 @@ async function reopenWorkbook(workbook: Buffer) {
 }
 
 describe("inventory workbook", () => {
+  it("bounds an export to its selected date window and rejects spans over one year", async () => {
+    expect(isInventoryExportRangeWithinLimit("2026-01-01", "2026-01-01")).toBe(true);
+    expect(isInventoryExportRangeWithinLimit("2025-01-01", "2026-01-02")).toBe(false);
+    expect(isInventoryExportRangeWithinLimit("2026-02-30", "2026-03-01")).toBe(false);
+
+    const { client, queries } = createEmptyExportSupabase();
+    const result = await getInventoryExportData(client, "owner-id", "2026-10-01", "2026-10-31");
+
+    expect(result.error).toBe(false);
+    expect(queries.filter((query) => query.table === "inventory_receipt_versions")).toHaveLength(0);
+    expect(queries.filter((query) => query.table === "inventory_receipts")
+      .every((query) => query.filters.some(([method, column]) => method === "gte" && column === "received_at")
+        && query.filters.some(([method, column]) => method === "lt" && column === "received_at"))).toBe(true);
+    expect(queries.some((query) => query.table === "inventory_counts"
+      && query.filters.some(([method, column]) => method === "gte" && column === "business_date")
+      && query.filters.some(([method, column]) => method === "lte" && column === "business_date"))).toBe(true);
+  });
+
+  it("uses stable sort keys when same-time receipt events cross an export page boundary", async () => {
+    const versions = Array.from({ length: 1001 }, (_, index) => ({ receipt_id: "receipt-1", sequence_no: index + 1 }));
+    const orders: { table: string; column: string }[] = [];
+    const ranges: { table: string; from: number; to: number }[] = [];
+    const client = {
+      from(table: string) {
+        let from = 0;
+        let to = 999;
+        const query = {
+          select: () => query,
+          eq: () => query,
+          gte: () => query,
+          lte: () => query,
+          order: (column: string) => { orders.push({ table, column }); return query; },
+          range: (rangeFrom: number, rangeTo: number) => { from = rangeFrom; to = rangeTo; ranges.push({ table, from, to }); return query; },
+          then: (resolve: (value: { data: unknown[]; error: null }) => unknown, reject?: (reason: unknown) => unknown) =>
+            Promise.resolve({ data: table === "inventory_receipt_versions" ? versions.slice(from, to + 1) : [], error: null }).then(resolve, reject),
+        };
+        return query;
+      },
+    };
+
+    const result = await getInventoryReceiptEventIdsBetween(client as never, "owner-id", "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z");
+
+    expect(result).toEqual({ ids: ["receipt-1"], error: false });
+    expect(ranges.filter(({ table }) => table === "inventory_receipt_versions")).toEqual([
+      { table: "inventory_receipt_versions", from: 0, to: 999 },
+      { table: "inventory_receipt_versions", from: 1000, to: 1999 },
+    ]);
+    expect(orders.filter(({ table }) => table === "inventory_receipt_versions").map(({ column }) => column)).toEqual([
+      "effective_at", "receipt_id", "sequence_no", "effective_at", "receipt_id", "sequence_no",
+    ]);
+  });
+
+  it("returns a safe size-limit error when selected stock-count items exceed the export budget", async () => {
+    const count = {
+      id: "count-1",
+      business_date: "2026-10-01",
+      status: "draft",
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-01T00:00:00Z",
+      finalized_at: null,
+    };
+    const oversizedItems = Array.from({ length: 50_001 }, (_, index) => ({
+      count_id: "count-1",
+      item_id: `item-${index}`,
+      item_name: `Item ${index}`,
+      category: "Nguyên liệu",
+      large_unit: "Hộp",
+      conversion_factor: "1",
+      small_unit: "Cái",
+      large_quantity: null,
+      small_quantity: null,
+      counted_quantity: null,
+      counted_at: null,
+      sort_order: index,
+    }));
+    const queryOrders: { table: string; column: string }[] = [];
+    const client = {
+      from(table: string) {
+        const filters: [string, string][] = [];
+        const query = {
+          select: () => query,
+          eq: (column: string) => { filters.push(["eq", column]); return query; },
+          gte: (column: string) => { filters.push(["gte", column]); return query; },
+          lte: (column: string) => { filters.push(["lte", column]); return query; },
+          lt: () => query,
+          not: () => query,
+          order: (column: string) => { queryOrders.push({ table, column }); return query; },
+          range: () => query,
+          limit: () => query,
+          in: () => query,
+          then: (resolve: (value: { data: unknown[]; error: null }) => unknown, reject?: (reason: unknown) => unknown) => {
+            const data = table === "inventory_counts" && filters.some(([method, column]) => method === "gte" && column === "business_date")
+              ? [count]
+              : table === "inventory_count_items" ? oversizedItems : [];
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    };
+
+    const result = await getInventoryExportData(client as never, "owner-id", "2026-10-01", "2026-10-01");
+
+    expect(result.error).toBe(true);
+    expect(result.errorCode).toBe("too_large");
+    expect(result.data.counts).toEqual([]);
+    expect(queryOrders.filter(({ table }) => table === "inventory_count_items").map(({ column }) => column)).toEqual([
+      "count_id", "sort_order", "category", "item_name", "item_id",
+    ]);
+  });
+
   it("writes and reopens two sheets, preserving zero separately from uncounted draft cells", async () => {
     const item = {
       item_id: "tea",

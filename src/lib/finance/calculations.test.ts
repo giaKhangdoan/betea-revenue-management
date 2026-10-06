@@ -215,4 +215,41 @@ describe("financial calculations", () => {
     expect(calculateProfitVnd({ periodKind: "custom", revenueVnd: 10_000, expensesVnd: 2_000, cogsVnd: null })).toBe(8_000);
     expect(calculateProfitVnd({ periodKind: "month", revenueVnd: 10_000, expensesVnd: 2_000 })).toBeNull();
   });
+
+  it("subtracts explicitly posted owner costs once and fails closed when their read is unavailable", () => {
+    expect(calculateProfitVnd({
+      periodKind: "month",
+      revenueVnd: 100_000,
+      expensesVnd: 20_000,
+      ownerPostedCostsVnd: 5_000,
+      cogsVnd: 30_000,
+    })).toBe(45_000);
+    expect(calculateProfitVnd({
+      periodKind: "month",
+      revenueVnd: 100_000,
+      expensesVnd: 20_000,
+      ownerPostedCostsVnd: -2_000,
+      cogsVnd: 30_000,
+    })).toBe(52_000);
+    expect(calculateProfitVnd({
+      periodKind: "month",
+      revenueVnd: 100_000,
+      expensesVnd: 20_000,
+      ownerPostedCostsVnd: null,
+      cogsVnd: 30_000,
+    })).toBeNull();
+  });
+
+  it("keeps Bluebook gross revenue unchanged when daily shop-paid expenses are deducted from profit", () => {
+    const grossRevenue = calculateDailyRevenue(completeOpenDay).totalVnd;
+    const profit = calculateProfitVnd({
+      periodKind: "week",
+      revenueVnd: grossRevenue,
+      expensesVnd: 20_000,
+    });
+
+    expect(grossRevenue).toBe(1_075_000);
+    expect(profit).toBe(1_055_000);
+    expect(calculateDailyRevenue(completeOpenDay).totalVnd).toBe(grossRevenue);
+  });
 });

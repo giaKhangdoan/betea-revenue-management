@@ -5,6 +5,7 @@ import { z } from "zod";
 import { currentBusinessDate } from "@/lib/finance/format";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { requireStaff } from "@/lib/auth/require-staff";
+import { getInventoryCountCorrections } from "@/lib/inventory/count-corrections";
 
 export type InventoryCountActionState = { error?: string; success?: string } | undefined;
 export type InventoryCatalogActionState = { error?: string; success?: string } | undefined;
@@ -79,6 +80,27 @@ export async function createInventoryItemAction(
   return { success: "Đã thêm mặt hàng vào danh mục." };
 }
 
+export async function getInventoryCountCorrectionsAction(
+  countIdValue: string,
+  cursor?: { correctedAt: string; id: string } | null,
+) {
+  const countId = idSchema.safeParse(countIdValue);
+  if (!countId.success) return { data: [], error: true, hasMore: false, nextCursor: null };
+
+  const owner = await requireOwnerClient();
+  if (!owner) return { data: [], error: true, hasMore: false, nextCursor: null };
+
+  const { data: finalizedCount, error } = await owner.supabase.from("inventory_counts")
+    .select("id")
+    .eq("owner_id", owner.ownerId).eq("id", countId.data).eq("status", "finalized")
+    .maybeSingle();
+  if (error || !finalizedCount) return { data: [], error: true, hasMore: false, nextCursor: null };
+
+  return getInventoryCountCorrections(owner.supabase, owner.ownerId, countId.data, cursor
+    ? { beforeAt: cursor.correctedAt, beforeId: cursor.id }
+    : {});
+}
+
 export async function updateInventoryItemAction(
   _state: InventoryCatalogActionState,
   formData: FormData,
@@ -135,6 +157,20 @@ export async function reactivateInventoryItemAction(
 
   revalidatePath("/inventory");
   return { success: "Đã đưa mặt hàng trở lại danh sách kiểm." };
+}
+
+export async function verifyInventoryItemConversionAction(
+  _state: InventoryCatalogActionState,
+  formData: FormData,
+): Promise<InventoryCatalogActionState> {
+  const id = idSchema.safeParse(formData.get("item_id"));
+  if (!id.success) return { error: "Mặt hàng không hợp lệ." };
+  const owner = await requireOwnerClient();
+  if (!owner) return { error: "Chỉ chủ cửa hàng mới được xác nhận đơn vị quy đổi." };
+  const { error } = await owner.supabase.rpc("owner_verify_inventory_item_conversion", { p_item_id: id.data });
+  if (error) return { error: "Chưa xác nhận được. Kiểm tra đơn vị nhập và hệ số quy đổi trước." };
+  revalidatePath("/inventory");
+  return { success: "Đã xác nhận đơn vị và hệ số quy đổi hiện tại." };
 }
 
 async function getInventoryAccess() {

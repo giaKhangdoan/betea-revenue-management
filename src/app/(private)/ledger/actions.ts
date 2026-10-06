@@ -1,13 +1,20 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { calculateReconciliationDifferenceVnd } from "@/lib/finance/calculations";
 import { addDays, parseVnd } from "@/lib/finance/format";
 import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
+import { loadFinalizedExpenseMatches, type FinalizedPurchaseExpenseMatch } from "@/lib/owner-advances/loaders";
 
-export type EntryActionState = { error?: string; success?: string } | undefined;
+export type EntryActionState = {
+  error?: string;
+  success?: string;
+  duplicateCandidates?: FinalizedPurchaseExpenseMatch[];
+  duplicateReviewKey?: string;
+} | undefined;
 
 const dateSchema = z.iso.date().refine((date) => date >= "2026-09-01", "Sổ bắt đầu từ 01/09/2026.");
 const revenueFields = [
@@ -182,17 +189,73 @@ export async function addDailyExpense(_state: EntryActionState, formData: FormDa
 
   const owner = await requireOwnerClient();
   if (!owner) return { error: "Phiên đăng nhập hết hạn hoặc tài khoản chưa được cấp quyền." };
+
+  if (formData.get("review_as_different_purchase") === "yes") {
+    const voucherIds = z.array(z.uuid()).min(1).max(1000).safeParse(readJsonFormField(formData, "matched_voucher_ids"));
+    const reviewReasonValue = formData.get("duplicate_review_reason");
+    const reviewReason = typeof reviewReasonValue === "string" ? reviewReasonValue.trim() : "";
+    const reviewKey = z.uuid().safeParse(formData.get("duplicate_review_key"));
+    if (!voucherIds.success || reviewReason.length < 5 || reviewReason.length > 500 || !reviewKey.success) {
+      return { error: "Kiểm tra lại danh sách phiếu và ghi lý do xác nhận giao dịch khác từ 5 đến 500 ký tự." };
+    }
+    const { error } = await owner.supabase.rpc("owner_add_daily_expense_after_duplicate_review", {
+      p_business_date: date.data,
+      p_amount_vnd: amount,
+      p_reason: reason.trim(),
+      p_matched_voucher_ids: voucherIds.data,
+      p_review_reason: reviewReason,
+      p_idempotency_key: reviewKey.data,
+    });
+    if (error) {
+      const { candidates, error: lookupError } = await loadFinalizedExpenseMatches(owner.supabase, owner.ownerId, date.data, amount, reason.trim());
+      if (lookupError) return { error: "Chưa tải đủ phiếu mua để xác nhận an toàn. Tải lại ngày rồi thử lại." };
+      return {
+        error: error.message.includes("changed")
+          ? "Danh sách phiếu trùng đã thay đổi. Kiểm tra lại các phiếu hiện tại trước khi lưu."
+          : "Chưa lưu được khoản chi đã đối chiếu. Chưa có thay đổi một phía nào được áp dụng.",
+        duplicateCandidates: candidates,
+        duplicateReviewKey: randomUUID(),
+      };
+    }
+    revalidatePath("/");
+    revalidatePath("/ledger");
+    revalidatePath(`/ledger/${date.data}`);
+    revalidatePath("/reports");
+    revalidatePath("/advances");
+    return { success: "Đã lưu chi phí tiền quán và ghi lý do giao dịch khác cho từng phiếu mua khớp. Khoản chi này đã khóa sửa/xóa để giữ lịch sử đối chiếu." };
+  }
+
+  const { candidates, error: lookupError } = await loadFinalizedExpenseMatches(owner.supabase, owner.ownerId, date.data, amount, reason.trim());
+  if (lookupError) return { error: "Chưa tải đủ phiếu mua để kiểm tra trùng. Chưa lưu khoản chi; hãy tải lại và thử lại." };
+  if (candidates.length) return {
+    error: "Khoản chi có thể trùng với phiếu mua cá nhân đã chốt. Kiểm tra danh sách bên dưới trước khi lưu.",
+    duplicateCandidates: candidates,
+    duplicateReviewKey: randomUUID(),
+  };
+
   const { error } = await owner.supabase.rpc("owner_add_daily_expense", {
     p_business_date: date.data,
     p_amount_vnd: amount,
     p_reason: reason.trim(),
   });
+  if (error?.message.includes("finalized purchase")) {
+    const { candidates: refreshedCandidates, error: refreshedError } = await loadFinalizedExpenseMatches(owner.supabase, owner.ownerId, date.data, amount, reason.trim());
+    return refreshedError
+      ? { error: "Khoản chi trùng với phiếu mua đã chốt. Chưa lưu khoản chi; hãy tải lại để admin kiểm tra." }
+      : { error: "Phiếu mua vừa được chốt trong lúc nhập. Kiểm tra các phiếu khớp bên dưới.", duplicateCandidates: refreshedCandidates, duplicateReviewKey: randomUUID() };
+  }
   if (error) return { error: "Chưa lưu được chi phí phát sinh. Hãy thử lại." };
   revalidatePath("/");
   revalidatePath("/ledger");
   revalidatePath(`/ledger/${date.data}`);
   revalidatePath("/reports");
   return { success: "Đã thêm chi phí phát sinh." };
+}
+
+function readJsonFormField(formData: FormData, name: string): unknown {
+  const raw = formData.get(name);
+  if (typeof raw !== "string") return undefined;
+  try { return JSON.parse(raw) as unknown; } catch { return undefined; }
 }
 
 export async function restoreDeletedShift(_state: EntryActionState, formData: FormData): Promise<EntryActionState> {

@@ -405,14 +405,26 @@ export function calculateProfitVnd(input: {
   revenueVnd: VndAmount | null;
   expensesVnd: VndAmount | null;
   cogsVnd?: VndAmount | null;
+  /** Net admin-posted purchase costs for the selected period; reversals are negative. */
+  ownerPostedCostsVnd?: number | null;
 }): VndAmount | null {
-  if (input.revenueVnd === null || input.expensesVnd === null) return null;
+  if (input.revenueVnd === null || input.expensesVnd === null || input.ownerPostedCostsVnd === null) return null;
   assertVnd(input.revenueVnd, "Revenue");
   assertVnd(input.expensesVnd, "Expenses");
+  const ownerPostedCostsVnd = input.ownerPostedCostsVnd ?? 0;
+  assertSignedVnd(ownerPostedCostsVnd, "Owner-posted purchase costs");
+  const totalExpensesVnd = input.expensesVnd + ownerPostedCostsVnd;
+  assertSignedVnd(totalExpensesVnd, "Total expenses");
 
   const includesCogs = input.periodKind === "month" || input.periodKind === "year";
-  if (!includesCogs) return input.revenueVnd - input.expensesVnd;
+  if (!includesCogs) {
+    const profit = input.revenueVnd - totalExpensesVnd;
+    assertSignedVnd(profit, "Profit");
+    return profit;
+  }
   if (input.cogsVnd === null || input.cogsVnd === undefined) return null;
   assertVnd(input.cogsVnd, "COGS");
-  return input.revenueVnd - input.expensesVnd - input.cogsVnd;
+  const profit = input.revenueVnd - totalExpensesVnd - input.cogsVnd;
+  assertSignedVnd(profit, "Profit");
+  return profit;
 }

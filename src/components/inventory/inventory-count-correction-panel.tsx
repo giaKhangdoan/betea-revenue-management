@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
-import { correctFinalizedInventoryCountAction, type InventoryCountActionState } from "@/app/(private)/inventory/actions";
+import { useActionState, useState } from "react";
+import { correctFinalizedInventoryCountAction, getInventoryCountCorrectionsAction, type InventoryCountActionState } from "@/app/(private)/inventory/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { formatInventoryQuantity, type InventoryCount, type InventoryCountItem } from "@/lib/inventory/counts";
-import type { InventoryCountCorrection } from "@/lib/inventory/count-corrections";
+import type { InventoryCountCorrection, InventoryCountCorrectionPage } from "@/lib/inventory/count-corrections";
 import { quantityAllowsFractional } from "@/lib/inventory/quantity-input";
 
 function formatTimestamp(value: string) {
@@ -30,15 +30,39 @@ function changed(before: InventoryCountCorrection["prior_items"][number], after:
 export function InventoryCountCorrectionPanel({
   count,
   items,
-  corrections,
-  historyError,
 }: {
   count: InventoryCount;
   items: InventoryCountItem[];
-  corrections: InventoryCountCorrection[];
-  historyError: boolean;
 }) {
   const [state, action, pending] = useActionState<InventoryCountActionState, FormData>(correctFinalizedInventoryCountAction, undefined);
+  const [corrections, setCorrections] = useState<InventoryCountCorrection[]>([]);
+  const [historyOpened, setHistoryOpened] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<InventoryCountCorrectionPage["nextCursor"]>(null);
+
+  async function loadHistory(cursor: InventoryCountCorrectionPage["nextCursor"] = null) {
+    if (historyLoading) return;
+    setHistoryLoading(true);
+    setHistoryError(false);
+    try {
+      const page = await getInventoryCountCorrectionsAction(count.id, cursor);
+      if (page.error) {
+        setHistoryError(true);
+        return;
+      }
+      setCorrections((current) => cursor ? [...current, ...page.data] : page.data);
+      setHasMore(page.hasMore);
+      setNextCursor(page.nextCursor);
+      setHistoryLoaded(true);
+    } catch {
+      setHistoryError(true);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   return <section className="surface inventory-panel">
     <div className="section-heading"><div><h2>Hiệu chỉnh bản kiểm đã chốt</h2><p>Nhập lý do bắt buộc. Thời điểm chốt và ranh giới kỳ giữ nguyên.</p></div></div>
@@ -68,10 +92,19 @@ export function InventoryCountCorrectionPanel({
     </form>
 
     <section className="inventory-movement-block">
-      <h3>Lịch sử hiệu chỉnh ({corrections.length})</h3>
-      {historyError ? <p className="empty-inline">Chưa tải được lịch sử hiệu chỉnh. Vui lòng tải lại trang.</p> : corrections.length === 0
-        ? <p className="empty-inline">Chưa có lần hiệu chỉnh.</p>
-        : <div className="inventory-period-list">{corrections.map((correction) => {
+      <div className="section-heading"><div><h3>Lịch sử hiệu chỉnh{historyLoaded ? ` (${corrections.length}${hasMore ? "+" : ""})` : ""}</h3>
+        <p>Lịch sử chỉ được tải khi bạn mở; mỗi lượt hiển thị tối đa 20 lần.</p></div>
+        {!historyOpened ? <button className="button button-secondary" type="button" onClick={() => {
+          setHistoryOpened(true);
+          void loadHistory();
+        }}>Mở lịch sử hiệu chỉnh</button> : null}
+      </div>
+      {!historyOpened ? <p className="empty-inline">Chưa tải lịch sử hiệu chỉnh.</p>
+        : historyLoading && !historyLoaded ? <p className="empty-inline" role="status">Đang tải lịch sử hiệu chỉnh…</p>
+          : historyError ? <div><p className="empty-inline" role="alert">Chưa tải được lịch sử hiệu chỉnh.</p>
+            <button className="button button-secondary" type="button" disabled={historyLoading} onClick={() => void loadHistory()}>{historyLoading ? "Đang tải…" : "Thử tải lại"}</button></div>
+            : corrections.length === 0 ? <p className="empty-inline">Chưa có lần hiệu chỉnh.</p>
+              : <div className="inventory-period-list">{corrections.map((correction) => {
           const updated = new Map(correction.updated_items.map((item) => [item.item_id, item]));
           const differences = correction.prior_items.flatMap((before) => {
             const after = updated.get(before.item_id);
@@ -85,6 +118,8 @@ export function InventoryCountCorrectionPanel({
             </li>)}</ul>}
           </details>;
         })}</div>}
+      {historyOpened && historyLoaded && hasMore && !historyError ? <button className="button button-secondary" type="button" disabled={historyLoading}
+        onClick={() => void loadHistory(nextCursor)}>{historyLoading ? "Đang tải…" : "Tải thêm lần hiệu chỉnh"}</button> : null}
     </section>
   </section>;
 }

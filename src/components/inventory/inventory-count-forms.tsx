@@ -312,7 +312,9 @@ export function InventoryCountEditor({ countId, items, editable, finalized = fal
               markDirty(item.item_id, "small");
             }} /></label> : null}
             <div className="inventory-count-total"><span>Trạng thái</span><strong>{needsRecount ? "Cần kiểm lại" : counted ? "Đã kiểm" : "Chưa kiểm"}</strong>
-              {counted && hasConversion && !countLargeUnitOnly && total !== null ? <small>Tổng: {formatMicro(total)} {item.small_unit}</small> : null}
+              {counted && hasConversion && !countLargeUnitOnly && total !== null ? <small>
+                {formatMicro(large ?? BigInt(0))} {item.large_unit} × {Number(item.conversion_factor).toLocaleString("vi-VN", { maximumFractionDigits: 3 })} + {formatMicro(small ?? BigInt(0))} {item.small_unit} = {formatMicro(total)} {item.small_unit}
+              </small> : null}
             </div>
             {needsRecount ? <div className="inventory-count-recheck">
               <p>Có phiếu nhập sau lần kiểm. Hãy kiểm tra thực tế rồi xác nhận số lượng hiện tại.</p>

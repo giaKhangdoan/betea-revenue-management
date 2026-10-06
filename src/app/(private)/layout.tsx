@@ -20,7 +20,6 @@ export default async function PrivateLayout({ children }: Readonly<{ children: R
           <span className="brand-mark" aria-hidden="true">B</span>
           <span className="brand-name">betea<span className="brand-subtitle">Sổ quản lý cửa hàng</span></span>
         </Link>
-        <p className="nav-label">Quản lý</p>
         <PrivateNavigation />
         <div className="rail-bottom">
           <p className="account-email">{access.email ?? "Tài khoản chủ cửa hàng"}</p>

@@ -21,8 +21,9 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   if (!owner) redirect("/login");
   if (queryDate !== undefined && queryDate !== selectedDate) redirect(`/ledger?date=${selectedDate}`);
 
-  const { data } = await loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: visibleStart, end: addDays(end, 1) });
-  const records = new Map(data.map((item) => [item.business_date, item]));
+  const recordsResult = await loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: visibleStart, end: addDays(end, 1) });
+  const recordsLoadError = Boolean(recordsResult.error);
+  const records = new Map((recordsResult.data ?? []).map((item) => [item.business_date, item]));
   const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
   const weekDays = days.map((date) => {
     const record = records.get(date);
@@ -34,7 +35,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
       grabSalesVnd: record.grab_vnd,
       shopeeSalesVnd: record.shopee_vnd,
     }) : null;
-    const status = isBeforeStart ? "Ngoài sổ" : future ? "Chưa đến" : !record ? "Chưa nhập" : record.business_status === "no_business" ? "Không kinh doanh" : revenue?.complete && record.business_status === "closed" ? "Đã chốt" : revenue?.complete ? "Đủ số liệu" : "Còn thiếu";
+    const status = isBeforeStart ? "Ngoài sổ" : future ? "Chưa đến" : recordsLoadError ? "Lỗi tải" : !record ? "Chưa nhập" : record.business_status === "no_business" ? "Không kinh doanh" : revenue?.complete && record.business_status === "closed" ? "Đã chốt" : revenue?.complete ? "Đủ số liệu" : "Còn thiếu";
     const shifts = record ? [record.shift_06_10_vnd, record.shift_10_14_vnd, record.shift_14_18_vnd, record.shift_18_22_vnd].reduce<number>((sum, value) => sum + Number(value ?? 0), 0) : null;
     const delivery = record ? Number(record.grab_vnd ?? 0) + Number(record.shopee_vnd ?? 0) : null;
     const reconciliation = record?.reconciliation_status ?? "unreconciled";
@@ -61,9 +62,10 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
         <div><p className="eyebrow">SỔ DOANH THU</p><h1>Tuần {formatBusinessDate(start, { day: "numeric", month: "long" })} – {formatBusinessDate(end, { day: "numeric", month: "long", year: "numeric" })}</h1><p>Tuần được tính từ Thứ 2 đến Chủ nhật; mở một ngày để nhập hoặc đối chiếu.</p></div>
         <Link className="button" href={`/ledger/${selectedDate}`}>Nhập ngày {selectedDate === today ? "hôm nay" : "đang chọn"}</Link>
       </div>
+      {recordsLoadError ? <p className="form-error report-error" role="alert">Không tải được sổ ngày. Chưa thể xác nhận ngày nào còn thiếu hoặc tổng doanh thu tuần; hãy tải lại trang.</p> : null}
       <section className="summary-strip surface" aria-label="Tổng hợp tuần">
-        <div><span>Doanh thu các ngày đã đủ dữ liệu</span><strong>{formatVnd(completedRevenue)}</strong></div>
-        <div><span>Ngày chưa đủ dữ liệu</span><strong>{incompleteCount} / {dueDays.length}</strong></div>
+        <div><span>{recordsLoadError ? "Doanh thu chưa tải được" : "Doanh thu các ngày đã đủ dữ liệu"}</span><strong>{recordsLoadError ? "—" : formatVnd(completedRevenue)}</strong></div>
+        <div><span>{recordsLoadError ? "Tình trạng nhập ngày" : "Ngày chưa đủ dữ liệu"}</span><strong>{recordsLoadError ? "Chưa xác định" : `${incompleteCount} / ${dueDays.length}`}</strong></div>
         <p>Tổng ngày cộng bốn ca với các kênh giao hàng có phát sinh. Grab/Shopee để trống được tính 0; ngày chưa đủ ca vẫn được đánh dấu riêng.</p>
       </section>
       <section className="surface week-card">

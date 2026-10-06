@@ -4,8 +4,9 @@ import { useState, useActionState } from "react";
 import { saveInventoryReceiptAction, type InventoryReceiptActionState } from "@/app/inventory/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { currentBusinessDate } from "@/lib/finance/format";
+import Link from "next/link";
 import type { InventoryItem } from "@/lib/inventory/catalog";
-import type { InventoryReceipt } from "@/lib/inventory/receipts";
+import { calculateConvertedReceiptQuantity, type InventoryReceipt } from "@/lib/inventory/receipts";
 import { preventInvalidQuantityKey, preventInvalidQuantityPaste, quantityAllowsFractional } from "@/lib/inventory/quantity-input";
 
 type ReceiptDraftLine = {
@@ -29,6 +30,23 @@ function formatQuantity(value: string | number) {
   const formattedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const formattedFraction = fraction.replace(/0+$/, "");
   return formattedFraction ? `${formattedWhole},${formattedFraction}` : formattedWhole;
+}
+
+function inventoryMilli(value: string | number): bigint | null {
+  const match = String(value).match(/^(\d+)(?:[.,](\d{1,3}))?$/);
+  if (!match) return null;
+  return BigInt(match[1]) * BigInt(1000) + BigInt((match[2] ?? "").padEnd(3, "0") || "0");
+}
+
+function formatMilli(value: bigint) {
+  const whole = value / BigInt(1000);
+  const fraction = String(value % BigInt(1000)).padStart(3, "0").replace(/0+$/, "");
+  const wholeText = String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return fraction ? `${wholeText},${fraction}` : wholeText;
+}
+
+export function previewInventoryReceiptQuantity(large: string, factor: string | number | null, loose: string) {
+  return calculateConvertedReceiptQuantity(large, factor, loose);
 }
 
 function formatReceiptDate(value: string) {
@@ -82,6 +100,15 @@ function ReceiptForm({
     large_quantity: String(line.large_quantity),
     loose_quantity: String(line.loose_quantity),
   })) ?? [blankReceiptLine()]);
+  const activeOutliers = (state?.outliers ?? []).filter((outlier) => {
+    const quantity = lines.filter((line) => line.item_id === outlier.item_id).reduce((sum, line) => {
+      const item = items.find((candidate) => candidate.id === line.item_id) ?? line;
+      const preview = previewInventoryReceiptQuantity(line.large_quantity, item.conversion_factor, line.loose_quantity);
+      const milli = preview === null ? null : inventoryMilli(preview);
+      return milli === null ? sum : sum + milli;
+    }, BigInt(0));
+    return formatMilli(quantity) === outlier.current_quantity;
+  });
 
   function updateLine(index: number, update: Partial<ReceiptDraftLine>) {
     setLines((current) => current.map((line, lineIndex) => lineIndex === index ? { ...line, ...update } : line));
@@ -102,6 +129,9 @@ function ReceiptForm({
       const hasPackage = Boolean(item.large_unit);
       const hasConversion = hasPackage && item.conversion_factor != null;
       const stockUnitIsDivisible = quantityAllowsFractional(item.small_unit);
+      const convertedPreview = hasConversion
+        ? previewInventoryReceiptQuantity(line.large_quantity, item.conversion_factor, line.loose_quantity)
+        : null;
       return <div className="inventory-receipt-line-form" key={`${receipt?.id ?? "new"}-${index}`}>
         <label className="field inventory-receipt-category"><span>Danh mục</span><select required value={line.category} onChange={(event) => updateLine(index, {
           category: event.currentTarget.value,
@@ -133,7 +163,16 @@ function ReceiptForm({
           {receiptLine && !selectedItem && line.category === receiptLine.category ? <option value={line.item_id}>{line.item_name} (không còn trong danh mục)</option> : null}
           {categoryItems.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}
         </select></label>
-        {hasConversion ? <p className="inventory-conversion-hint">1 {item.large_unit} = {formatQuantity(item.conversion_factor!)} {item.small_unit}</p> : hasPackage ? <p className="inventory-conversion-hint">Hai đơn vị được lưu riêng, không tự cộng.</p> : null}
+        {hasConversion ? <>
+          <p className="inventory-conversion-hint">
+            1 {item.large_unit} = {formatQuantity(item.conversion_factor!)} {item.small_unit}
+            <br />{formatQuantity(line.large_quantity)} {item.large_unit} × {formatQuantity(item.conversion_factor!)} + {formatQuantity(line.loose_quantity)} {item.small_unit}
+            {convertedPreview === null ? " = nhập số để xem tổng" : ` = ${convertedPreview} ${item.small_unit}`}
+          </p>
+          <p className={selectedItem?.conversion_verified_at ? "inventory-unit-verified" : "inventory-unit-unverified"}>
+            {selectedItem?.conversion_verified_at ? "Đơn vị quy đổi đã được chủ xác minh." : "Đơn vị quy đổi chưa xác minh; đối chiếu với bao bì trước khi chốt."}
+          </p>
+        </> : hasPackage ? <p className="inventory-conversion-hint">Hai đơn vị được lưu riêng, không tự cộng.</p> : null}
         {!line.item_id ? <>
           <input type="hidden" name="large_quantity" value="0" />
           <input type="hidden" name="loose_quantity" value="0" />
@@ -150,8 +189,16 @@ function ReceiptForm({
     })}
     {items.length > 0 ? <button className="text-button inventory-add-line" type="button" onClick={() => setLines((current) => [...current, blankReceiptLine()])}>+ Thêm mặt hàng</button> : <p className="empty-inline">Chưa có mặt hàng đang hoạt động.</p>}
     {receipt ? <label className="field inventory-correction-reason"><span>Lý do chỉnh sửa</span><textarea name="reason" required maxLength={500} rows={2} /></label> : null}
+    {activeOutliers.length > 0 ? <div className="inventory-outlier-warning" role="alert">
+      <strong>Kiểm tra lượng nhập trước khi lưu</strong>
+      <ul>{activeOutliers.map((outlier) => <li key={outlier.item_id}>
+        {outlier.item_name}: số nhập {formatQuantity(outlier.current_quantity)}, trung vị 5 lần gần nhất {formatQuantity(outlier.median_quantity)} ({outlier.ratio}).
+      </li>)}</ul>
+      {state?.canConfirmOutliers ? <p>Chủ cửa hàng có thể xác nhận sau khi đã đối chiếu phiếu giao.</p> : <p>Nhân viên vui lòng báo chủ cửa hàng nếu số lượng này chính xác.</p>}
+    </div> : null}
     <div className="staff-inline-actions">
       <button className="button button-secondary" type="submit" disabled={pending || items.length === 0 || lines.some((line) => !line.item_id)}>{pending ? "Đang lưu…" : !receipt ? "Tạo phiếu nhập" : ownerCorrection ? "Lưu hiệu chỉnh" : "Lưu phiếu"}</button>
+      {activeOutliers.length > 0 && state?.canConfirmOutliers ? <button className="button button-primary" type="submit" name="confirm_outliers" value="yes" disabled={pending}>{pending ? "Đang lưu…" : "Tôi đã đối chiếu, xác nhận"}</button> : null}
       {onCancel ? <button className="text-button" type="button" onClick={onCancel}>Hủy</button> : null}
     </div>
     <ActionMessage error={state?.error} success={state?.success} />
@@ -165,6 +212,9 @@ export function InventoryReceivingPanel({
   owner,
   receivingError,
   today,
+  hasMore = false,
+  nextCursor = null,
+  pageBaseHref = "/inventory/history",
 }: {
   items: InventoryItem[];
   receipts: InventoryReceipt[];
@@ -172,11 +222,14 @@ export function InventoryReceivingPanel({
   owner: boolean;
   receivingError: boolean;
   today: string;
+  hasMore?: boolean;
+  nextCursor?: { receivedAt: string; id: string } | null;
+  pageBaseHref?: string;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   return <section className="surface inventory-panel">
     {receivingError ? <div className="empty-state"><h2>Chưa tải được phiếu nhập</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : <>
-      <div className="section-heading"><div><h2>Phiếu nhập</h2><p>{canCreate ? "Mỗi lần giao hàng ghi thành một phiếu riêng." : "Phiếu được sắp xếp theo thời điểm giao."}</p></div><strong>{receipts.length} phiếu</strong></div>
+      <div className="section-heading"><div><h2>Phiếu nhập gần đây</h2><p>{canCreate ? "Mỗi lần giao hàng ghi thành một phiếu riêng." : "Phiếu được sắp xếp theo thời điểm giao."}</p></div><strong>{receipts.length} phiếu</strong></div>
       {canCreate ? <ReceiptForm items={items} /> : null}
       {receipts.length === 0 ? <p className="empty-inline">Chưa có phiếu nhập.</p> : <div className="inventory-receipt-list">{receipts.map((receipt) => {
         const canEdit = owner || (canCreate && receipt.staff_editable && currentBusinessDate(new Date(receipt.received_at)) === today);
@@ -184,18 +237,25 @@ export function InventoryReceivingPanel({
         return <article className="inventory-receipt" key={receipt.id}>
           <div className="inventory-receipt-heading"><div><h3>{receipt.receipt_code}</h3><p>{formatReceiptDate(receipt.received_at)} · {receipt.created_by_label}</p></div>{canEdit && !unitsChanged ? <button className="text-button" type="button" onClick={() => setEditingId(editingId === receipt.id ? null : receipt.id)}>{editingId === receipt.id ? "Đóng sửa" : owner ? "Hiệu chỉnh" : "Sửa phiếu"}</button> : null}</div>
           {canEdit && unitsChanged ? <p className="form-note">Không thể sửa phiếu này vì đơn vị hoặc quy cách đã đổi trong danh mục.</p> : null}
-          {editingId === receipt.id ? <ReceiptForm key={`${receipt.id}-edit`} items={items} receipt={receipt} ownerCorrection={owner} onCancel={() => setEditingId(null)} /> : <ReceiptLines lines={receipt.lines} />}
+          {receipt.history_integrity?.status === "unverified" ? <p className="inventory-history-warning" role="status">Lịch sử chưa xác minh — cần đối chiếu. {receipt.history_integrity.reason ?? "Dòng hàng hiện lưu không khẳng định số lượng tại lúc nhập."}</p> : null}
+          {owner && receipt.history_truncated ? <p className="inventory-history-warning" role="status">Phiếu có hơn 50 lần hiệu chỉnh; trang này đang hiển thị 50 lần gần nhất.</p> : null}
+          {editingId === receipt.id ? <ReceiptForm key={`${receipt.id}-edit`} items={items} receipt={receipt} ownerCorrection={owner} onCancel={() => setEditingId(null)} /> : <>
+            {receipt.history_integrity?.status === "unverified" ? <p className="inventory-movement-note">Dòng hàng dưới đây là dữ liệu hiện đang lưu, không phải bản xác nhận lịch sử lúc nhập.</p> : null}
+            <ReceiptLines lines={receipt.lines} />
+          </>}
           {owner && receipt.corrections.length > 0 ? <details className="inventory-receipt-audit"><summary>Lịch sử hiệu chỉnh ({receipt.corrections.length})</summary>{receipt.corrections.map((correction, index) => {
             // Each newer correction's prior_lines is this event's after snapshot; current lines follow the latest event.
             const afterLines = index === 0 ? receipt.lines : receipt.corrections[index - 1].prior_lines;
             return <div className="inventory-receipt-correction" key={correction.id}>
               <p>{formatReceiptDate(correction.corrected_at)} · {correction.corrected_by_label}</p><p>Lý do: {correction.reason}</p>
               <p>Trước khi sửa</p><ReceiptLines lines={correction.prior_lines} />
-              <p>Sau khi sửa</p><ReceiptLines lines={afterLines} />
+              {receipt.history_integrity?.status === "unverified" ? <p className="inventory-history-warning" role="status">Không hiển thị trạng thái sau lần sửa vì thứ tự hoặc chuỗi lịch sử chưa xác minh.</p>
+                : <><p>Sau khi sửa</p><ReceiptLines lines={correction.after_lines ?? afterLines} /></>}
             </div>;
           })}</details> : null}
         </article>;
       })}</div>}
+      {hasMore && nextCursor ? <Link className="button button-secondary inventory-history-more" href={`${pageBaseHref}?${pageBaseHref === "/inventory/history" ? "view=receipts&" : "tab=receiving&"}before=${encodeURIComponent(nextCursor.receivedAt)}&beforeId=${encodeURIComponent(nextCursor.id)}`}>Xem phiếu cũ hơn</Link> : null}
     </>}
   </section>;
 }

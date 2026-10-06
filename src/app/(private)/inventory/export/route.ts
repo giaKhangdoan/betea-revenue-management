@@ -1,6 +1,6 @@
 import { currentBusinessDate } from "@/lib/finance/format";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
-import { createInventoryWorkbook, getInventoryExportData } from "@/lib/inventory/export";
+import { createInventoryWorkbook, getInventoryExportData, isInventoryExportRangeWithinLimit } from "@/lib/inventory/export";
 import { isInventoryBusinessDate } from "@/lib/inventory/counts";
 
 export async function GET(request: Request) {
@@ -13,9 +13,22 @@ export async function GET(request: Request) {
   if (!isInventoryBusinessDate(from) || !isInventoryBusinessDate(to) || from > to || to > currentBusinessDate()) {
     return Response.json({ error: "Khoảng ngày không hợp lệ." }, { status: 400 });
   }
+  if (!isInventoryExportRangeWithinLimit(from, to)) {
+    return Response.json({ error: "Mỗi lần xuất tối đa 366 ngày. Hãy thu hẹp khoảng ngày." }, { status: 400 });
+  }
 
-  const { data, error } = await getInventoryExportData(owner.supabase, owner.ownerId, from, to);
-  if (error) return Response.json({ error: "Chưa tải được dữ liệu kho." }, { status: 500 });
+  const { data, error, errorCode } = await getInventoryExportData(owner.supabase, owner.ownerId, from, to);
+  if (error) {
+    const tooLarge = errorCode === "too_large";
+    const rangeTooLarge = errorCode === "range_too_large";
+    return Response.json({ error: tooLarge
+      ? "Lịch sử kho vượt giới hạn an toàn của một lần xuất. Hãy thu hẹp khoảng ngày."
+      : rangeTooLarge
+        ? "Mốc lịch sử kiểm kê cách nhau quá xa. Hãy xuất một khoảng ngày hẹp hơn."
+        : "Chưa tải được dữ liệu kho." }, {
+      status: tooLarge ? 413 : rangeTooLarge ? 400 : 500,
+    });
+  }
 
   const workbook = createInventoryWorkbook(data, from, to);
   return new Response(workbook, {

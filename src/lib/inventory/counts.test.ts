@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatInventoryQuantity, getInventoryItemsNeedingRecount, summarizeInventoryMovement, type InventoryFinalizedCount, type InventoryMovementReceipt } from "./counts";
+import { formatInventoryQuantity, getInventoryItemsNeedingRecount, summarizeInventoryMovement, type InventoryCountHistoryVersion, type InventoryFinalizedCount, type InventoryMovementReceipt, type InventoryReceiptHistoryVersion } from "./counts";
 import type { InventoryCountItem } from "./counts";
 import type { InventoryReceipt } from "./receipts";
 
@@ -95,6 +95,207 @@ describe("inventory movement", () => {
       movement_sign: null,
       conversion_unavailable: true,
     });
+  });
+
+  it("keeps pre-correction periods stable and applies receipt/count versions to later cutoffs", () => {
+    type VersionedCount = InventoryFinalizedCount & {
+      versions: InventoryCountHistoryVersion[];
+    };
+    type VersionedReceipt = InventoryMovementReceipt & {
+      versions: InventoryReceiptHistoryVersion[];
+    };
+    const makeCount = (id: string, finalizedAt: string, quantity: string): InventoryFinalizedCount => ({
+      id,
+      business_date: finalizedAt.slice(0, 10),
+      finalized_at: finalizedAt,
+      items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: quantity }],
+    });
+    const counts: VersionedCount[] = [
+      makeCount("a", "2026-09-01T00:00:00.000Z", "100") as VersionedCount,
+      makeCount("b", "2026-09-02T00:00:00.000Z", "80") as VersionedCount,
+      {
+        ...makeCount("c", "2026-09-03T00:00:00.000Z", "50"),
+        versions: [
+          {
+            effective_at: "2026-09-03T00:00:00.000Z",
+            sequence_no: 3,
+            event_type: "count_finalized",
+            items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "60" }],
+          },
+          {
+            effective_at: "2026-09-03T12:00:00.000Z",
+            sequence_no: 5,
+            event_type: "count_corrected",
+            items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "50" }],
+          },
+        ],
+      },
+      makeCount("d", "2026-09-04T00:00:00.000Z", "40") as VersionedCount,
+    ];
+    const makeReceipt = (
+      id: string,
+      receivedAt: string,
+      quantity: string,
+      versions: VersionedReceipt["versions"],
+    ): VersionedReceipt => ({
+      id,
+      receipt_code: id,
+      received_at: receivedAt,
+      created_by_label: "Chủ",
+      lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: quantity }],
+      versions,
+    });
+    const receipts = [
+      makeReceipt("r1", "2026-09-01T12:00:00.000Z", "15", [
+        {
+          effective_at: "2026-09-01T12:00:00.000Z",
+          sequence_no: 2,
+          event_type: "receipt_created",
+          lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "5" }],
+        },
+        {
+          effective_at: "2026-09-02T12:00:00.000Z",
+          sequence_no: 4,
+          event_type: "receipt_corrected",
+          lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "15" }],
+        },
+      ]),
+      makeReceipt("r2", "2026-09-02T06:00:00.000Z", "2", [
+        {
+          effective_at: "2026-09-02T06:00:00.000Z",
+          sequence_no: 3,
+          event_type: "receipt_created",
+          lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "6" }],
+        },
+        {
+          effective_at: "2026-09-03T12:00:00.000Z",
+          sequence_no: 6,
+          event_type: "receipt_corrected",
+          lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "2" }],
+        },
+      ]),
+    ];
+
+    const summary = summarizeInventoryMovement(counts, receipts);
+
+    expect(summary.periods.map(({ items }) => items[0].movement_quantity)).toEqual(["25", "36", "6"]);
+    expect(summary.periods[0].items[0].received_quantity).toBe("5");
+    expect(summary.periods[1].items[0].received_quantity).toBe("16");
+    expect(summary.periods[2].items[0].received_quantity).toBe("−4");
+    expect(summary.periods[1].current_count.items[0].counted_quantity).toBe("60");
+    expect(summary.periods[2].previous_count.items[0].counted_quantity).toBe("50");
+  });
+
+  it("uses the global sequence to place events with the same effective timestamp", () => {
+    const summary = summarizeInventoryMovement([
+      {
+        id: "before",
+        business_date: "2026-09-01",
+        finalized_at: "2026-09-01T10:00:00.000Z",
+        items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "100" }],
+        versions: [{
+          effective_at: "2026-09-01T10:00:00.000Z",
+          sequence_no: 1,
+          event_type: "count_finalized",
+          items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "100" }],
+        }],
+      },
+      {
+        id: "after",
+        business_date: "2026-09-02",
+        finalized_at: "2026-09-02T10:00:00.000Z",
+        items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "90" }],
+        versions: [{
+          effective_at: "2026-09-02T10:00:00.000Z",
+          sequence_no: 5,
+          event_type: "count_finalized",
+          items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "90" }],
+        }],
+      },
+    ], [{
+      id: "tied-receipt",
+      receipt_code: "PN-tied",
+      received_at: "2026-09-02T10:00:00.000Z",
+      created_by_label: "Chủ",
+      lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "5" }],
+      versions: [{
+        effective_at: "2026-09-02T10:00:00.000Z",
+        sequence_no: 6,
+        event_type: "receipt_created",
+        lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "5" }],
+      }],
+    }]);
+
+    expect(summary.periods[0].items[0].received_quantity).toBe("0");
+    expect(summary.periods[0].items[0].movement_quantity).toBe("10");
+  });
+
+  it("preserves existing movement behavior for inputs without event versions", () => {
+    const summary = summarizeInventoryMovement([
+      {
+        id: "before",
+        business_date: "2026-09-01",
+        finalized_at: "2026-09-01T00:00:00.000Z",
+        items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "10" }],
+      },
+      {
+        id: "after",
+        business_date: "2026-09-02",
+        finalized_at: "2026-09-02T00:00:00.000Z",
+        items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "7" }],
+      },
+    ], [{
+      id: "legacy-receipt",
+      receipt_code: "PN-legacy",
+      received_at: "2026-09-01T12:00:00.000Z",
+      created_by_label: "Chủ",
+      lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "2" }],
+    }]);
+
+    expect(summary.periods[0].items[0].movement_quantity).toBe("5");
+  });
+
+  it("suppresses movement that depends on non-reconstructable legacy history", () => {
+    const counts: InventoryFinalizedCount[] = [
+      {
+        id: "verified-opening",
+        business_date: "2026-09-01",
+        finalized_at: "2026-09-01T00:00:00.000Z",
+        items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "100" }],
+        history_integrity: { status: "verified", reason: null },
+      },
+      {
+        id: "unverified-count",
+        business_date: "2026-09-02",
+        finalized_at: "2026-09-02T00:00:00.000Z",
+        items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "80" }],
+        history_integrity: { status: "unverified", reason: "Không khôi phục được lần kiểm kho ban đầu." },
+      },
+      {
+        id: "verified-closing",
+        business_date: "2026-09-03",
+        finalized_at: "2026-09-03T00:00:00.000Z",
+        items: [{ item_id: "tea", item_name: "Trà", small_unit: "g", counted_quantity: "70" }],
+        history_integrity: { status: "verified", reason: null },
+      },
+    ];
+    const receipts: InventoryMovementReceipt[] = [{
+      id: "unverified-receipt",
+      receipt_code: "PN-uncertain",
+      received_at: "2026-09-01T12:00:00.000Z",
+      updated_at: "2026-09-02T12:00:00.000Z",
+      created_by_label: "Chủ",
+      lines: [{ item_id: "tea", item_name: "Trà", small_unit: "g", converted_quantity: "20" }],
+      history_integrity: { status: "unverified", reason: "Không xác định được số lượng tại thời điểm nhập." },
+    }];
+
+    const summary = summarizeInventoryMovement(counts, receipts);
+
+    expect(summary.periods.map((period) => period.history_unverified)).toEqual([true, true]);
+    expect(summary.periods.map((period) => period.items[0].received_quantity)).toEqual(["—", "—"]);
+    expect(summary.periods.map((period) => period.items[0].movement_quantity)).toEqual([null, null]);
+    expect(summary.periods[0].history_unverified_reasons).toContain("Không khôi phục được lần kiểm kho ban đầu.");
+    expect(summary.periods[0].history_unverified_reasons).toContain("Không xác định được số lượng tại thời điểm nhập.");
   });
 });
 

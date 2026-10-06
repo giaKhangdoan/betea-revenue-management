@@ -26,7 +26,7 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
     owner.supabase.from("day_photos").select("id,category,shift_code,object_path,storage_provider,caption,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
     owner.supabase.from("daily_shift_deletions").select("id,shift_code,amount_vnd,deleted_at,restored_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("deleted_at", { ascending: false }),
   ]);
-  const record = dayResult.data[0] ?? null;
+  const record = dayResult.data?.[0] ?? null;
   const expenses = expensesResult.data ?? [];
   const photos = await Promise.all((photosResult.data ?? []).map(async (photo) => {
     const signedUrl = await createEvidencePhotoUrl(owner.supabase, photo);
@@ -43,7 +43,8 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
       <OwnerLiveRefresh ownerId={owner.ownerId} date={date} />
       <div className="day-layout">
         <div className="day-primary">
-          <DailyEntryForm key={date} date={date} record={record} nextMorningKwh={nextDayResult.data[0]?.electricity_morning_kwh == null ? null : Number(nextDayResult.data[0].electricity_morning_kwh)} />
+          {dayResult.error ? <p className="form-error" role="alert">Không tải được sổ của ngày này. Đã khóa nhập/sửa để tránh ghi đè doanh thu cũ bằng biểu mẫu trống; hãy tải lại trang khi kết nối ổn định.</p> : <DailyEntryForm key={date} date={date} record={record} nextMorningKwh={nextDayResult.data?.[0]?.electricity_morning_kwh == null ? null : Number(nextDayResult.data[0].electricity_morning_kwh)} />}
+          {nextDayResult.error ? <p className="form-note" role="status">Chưa tải được chỉ số ca sáng ngày mai; phần điện qua đêm chưa thể tính hoặc xác nhận.</p> : null}
           <DailyExpenseForm date={date} />
           <DeletedShiftHistory date={date} rows={(deletedShiftsResult.data ?? []) as never} />
           <section className="surface table-card">

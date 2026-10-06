@@ -4,6 +4,7 @@ import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { allocateMonthlyAmountByDay, allocateSignedMonthlyAmountByDay, calculateDailyRevenue, calculateMonthlyElectricity, calculateProfitVnd, daysInMonth, hasMeterResetWithinMonth, monthKeyOf, weekRangeContaining, type MonthlyCostInput } from "@/lib/finance/calculations";
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
 import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
+import { loadOwnerPostedProfitCostsInDateRange } from "@/lib/owner-advances/overview";
 
 export const dynamic = "force-dynamic";
 
@@ -75,15 +76,16 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   const queryStart = invalidRange ? "2026-09-01" : `${start.slice(0, 7)}-01`;
   const queryEnd = invalidRange ? "2026-09-01" : monthEnd(`${end.slice(0, 7)}-01`);
-  const [recordsResult, costsResult, expensesResult, adjustmentsResult, monthTargetResult, weekTargetResult] = await Promise.all([
+  const [recordsResult, costsResult, expensesResult, adjustmentsResult, monthTargetResult, weekTargetResult, ownerPostedCostsResult] = await Promise.all([
     loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: queryStart, end: queryEnd }),
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).gte("month_start", `${queryStart.slice(0, 7)}-01`).lte("month_start", `${queryEnd.slice(0, 7)}-01`),
     owner.supabase.from("daily_expenses").select("business_date,amount_vnd").eq("owner_id", owner.ownerId).is("deleted_at", null).gte("business_date", invalidRange ? queryStart : start).lte("business_date", invalidRange ? queryEnd : end),
     owner.supabase.from("monthly_cost_adjustments").select("month_start,amount_delta_vnd").eq("owner_id", owner.ownerId).gte("month_start", `${queryStart.slice(0, 7)}-01`).lte("month_start", `${queryEnd.slice(0, 7)}-01`),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", `${start.slice(0, 7)}-01`).maybeSingle(),
     owner.supabase.from("weekly_targets").select("revenue_target_vnd").eq("owner_id", owner.ownerId).eq("week_start", weekStart(validDate(params.date) ? params.date : today)).maybeSingle(),
+    loadOwnerPostedProfitCostsInDateRange(owner.supabase, owner.ownerId, invalidRange ? queryStart : start, invalidRange ? queryEnd : end),
   ]);
-  const records = recordsResult.data as RecordRow[];
+  const records = (recordsResult.data ?? []) as RecordRow[];
   const recordMap = new Map(records.map((record) => [record.business_date, record]));
   const costMap = new Map((costsResult.data ?? []).map((cost) => [cost.month_start.slice(0, 7), cost]));
   const adjustmentMap = new Map<string, number>();
@@ -112,7 +114,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   }
   const incompleteDays = [...dailyRevenue.values()].filter((amount) => amount === null).length;
   const revenueVnd = [...dailyRevenue.values()].reduce<number>((sum, amount) => sum + (amount ?? 0), 0);
-  const revenueComplete = dateList.length > 0 && incompleteDays === 0;
+  const revenueSourceError = Boolean(recordsResult.error);
+  const revenueComplete = !revenueSourceError && dateList.length > 0 && incompleteDays === 0;
   let revenueChartItems: RevenueChartItem[];
   if (mode === "year") {
     revenueChartItems = (invalidRange ? [] : monthRange(start, end)).map((month) => {
@@ -150,7 +153,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     }));
   }
   const revenueChartTitle = mode === "year" ? "Doanh thu theo tháng" : mode === "custom" && dateList.length > 31 ? "Doanh thu theo tuần" : "Doanh thu theo ngày";
-  const revenueChartDescription = mode === "year"
+  const revenueChartDescription = revenueSourceError
+    ? "Không tải được sổ ngày; biểu đồ chưa thể xác nhận doanh thu trong khoảng này."
+    : mode === "year"
     ? "Cột xám đánh dấu tháng còn ngày thiếu doanh thu."
     : mode === "custom" && dateList.length > 31
       ? "Tổng theo tuần từ Thứ 2 đến Chủ nhật; cột xám có ngày chưa nhập."
@@ -204,12 +209,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // covers the in-scope months even though January–August are outside this ledger.
   const periodKind = mode === "year" ? "year" : mode === "month" ? "month" : mode === "week" ? "week" : "custom";
   const periodIsOngoing = requestedEnd > today;
-  const canShowProfit = revenueComplete && incompleteCostDays === 0 && ((periodKind !== "month" && periodKind !== "year") || cogsComplete);
+  const operatingCostSourceError = expensesResult.error || adjustmentsResult.error || ownerPostedCostsResult.error;
+  const canShowProfit = revenueComplete && incompleteCostDays === 0 && !operatingCostSourceError && ((periodKind !== "month" && periodKind !== "year") || cogsComplete);
   const profitVnd = canShowProfit ? calculateProfitVnd({
     periodKind,
     revenueVnd,
     expensesVnd: operatingCostsVnd,
     cogsVnd,
+    ownerPostedCostsVnd: ownerPostedCostsResult.amountVnd,
   }) : null;
   const target = mode === "week"
     ? weekTargetResult.data
@@ -226,7 +233,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const targetDetail = revenueTarget === null
     ? null
     : targetPercent === null
-      ? incompleteDays > 0 ? `Còn ${incompleteDays} ngày thiếu doanh thu nên chưa chốt tỷ lệ mục tiêu.` : "Chưa đủ dữ liệu trong phạm vi sổ để tính tỷ lệ mục tiêu."
+      ? revenueSourceError ? "Không tải được sổ ngày để tính tỷ lệ mục tiêu." : incompleteDays > 0 ? `Còn ${incompleteDays} ngày thiếu doanh thu nên chưa chốt tỷ lệ mục tiêu.` : "Chưa đủ dữ liệu trong phạm vi sổ để tính tỷ lệ mục tiêu."
       : periodIsOngoing
         ? `Tiến độ ${targetPercent.toFixed(0)}% ${targetName} đến ${formatBusinessDate(end, { day: "numeric", month: "short" })}.`
         : `Đạt ${targetPercent.toFixed(0)}% ${targetName}.`;
@@ -246,7 +253,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     const missing: string[] = [];
     const input = monthInputs.get(month);
 
-    if (recordedRevenueDays < inScopeDates.length) {
+    if (recordsResult.error) {
+      missing.push("không tải được sổ ngày để đối chiếu doanh thu");
+    } else if (recordedRevenueDays < inScopeDates.length) {
       missing.push(`${inScopeDates.length - recordedRevenueDays} ngày thiếu doanh thu`);
     }
     if (!input || input.wagesVnd === null) missing.push("chưa nhập lương");
@@ -277,9 +286,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </form>
       </section>
       {invalidRange ? <p className="form-error report-error" role="alert">Khoảng ngày không hợp lệ hoặc chưa nằm trong phạm vi sổ từ 01/09/2026.</p> : null}
+      {recordsResult.error ? <p className="form-error report-error" role="alert">Không tải được sổ ngày. Doanh thu và lợi nhuận trong báo cáo chưa thể đối chiếu; hãy tải lại trang.</p> : null}
       <section className="report-metrics">
-        <article className="surface report-metric"><span>Doanh thu {revenueComplete ? "đủ dữ liệu" : "các ngày đã nhập đủ"}</span><strong>{formatVnd(revenueVnd)}</strong><small>{incompleteDays > 0 ? `Còn ${incompleteDays} ngày chưa đủ dữ liệu.` : `${dateList.length} ngày đã đối chiếu.`}</small>{revenueTarget !== null ? <><small>Mục tiêu doanh thu: {formatVnd(revenueTarget)}</small><small>{targetDetail}</small></> : null}</article>
-        <article className="surface report-metric"><span>{mode === "week" || mode === "custom" ? `Lợi nhuận trước COGS${periodIsOngoing ? " · tạm tính" : ""}` : `Lợi nhuận ${mode === "year" ? "năm" : "tháng"}${periodIsOngoing ? " · tạm tính" : ""} sau COGS`}</span><strong>{profitVnd === null ? "Chưa đủ dữ liệu" : formatVnd(profitVnd)}</strong><small>{profitVnd === null ? `Ngày thiếu: ${incompleteDays} · Ngày thiếu chi phí: ${incompleteCostDays}${(mode === "month" || mode === "year") && !cogsComplete ? " · Chưa nhập đủ COGS từng tháng." : ""}` : periodIsOngoing ? `Tạm tính đến ${formatBusinessDate(end, { day: "numeric", month: "long" })}; COGS theo số hiện đã nhập.` : mode === "week" || mode === "custom" ? "Đã trừ chi phí phân bổ và khoản phát sinh; chưa trừ COGS." : "Đã trừ COGS POS và các chi phí tháng."}</small>{variance !== null ? <small className={variance >= 0 ? "variance-positive" : "variance-negative"}>{variance >= 0 ? "+" : ""}{variance.toFixed(1)}% so với mục tiêu lợi nhuận</small> : profitTarget !== null ? <small>Mục tiêu lợi nhuận tháng: {formatVnd(profitTarget)}{periodIsOngoing ? " · đối chiếu sau khi chốt tháng." : ""}</small> : null}</article>
+        <article className="surface report-metric"><span>{revenueSourceError ? "Doanh thu chưa tải được" : `Doanh thu ${revenueComplete ? "đủ dữ liệu" : "các ngày đã nhập đủ"}`}</span><strong>{revenueSourceError ? "Không tải được dữ liệu" : formatVnd(revenueVnd)}</strong><small>{revenueSourceError ? "Không thể xác nhận tổng doanh thu." : incompleteDays > 0 ? `Còn ${incompleteDays} ngày chưa đủ dữ liệu.` : `${dateList.length} ngày đã đối chiếu.`}</small>{revenueTarget !== null ? <><small>Mục tiêu doanh thu: {formatVnd(revenueTarget)}</small><small>{targetDetail}</small></> : null}</article>
+        <article className="surface report-metric"><span>{mode === "week" || mode === "custom" ? `Lợi nhuận trước COGS${periodIsOngoing ? " · tạm tính" : ""}` : `Lợi nhuận ${mode === "year" ? "năm" : "tháng"}${periodIsOngoing ? " · tạm tính" : ""} sau COGS`}</span><strong>{profitVnd === null ? "Chưa đủ dữ liệu" : formatVnd(profitVnd)}</strong><small>{profitVnd === null ? operatingCostSourceError ? "Không tải được một nguồn chi phí đã ghi nhận; tải lại trang để đối chiếu lợi nhuận." : `Ngày thiếu: ${incompleteDays} · Ngày thiếu chi phí: ${incompleteCostDays}${(mode === "month" || mode === "year") && !cogsComplete ? " · Chưa nhập đủ COGS từng tháng." : ""}` : periodIsOngoing ? `Tạm tính đến ${formatBusinessDate(end, { day: "numeric", month: "long" })}; đã trừ chi phí quản lý và khoản admin đã ghi nhận.` : mode === "week" || mode === "custom" ? "Đã trừ chi phí phân bổ, khoản phát sinh và khoản admin đã ghi nhận; chưa trừ COGS." : "Đã trừ COGS POS, chi phí quản lý và khoản admin đã ghi nhận."}</small>{variance !== null ? <small className={variance >= 0 ? "variance-positive" : "variance-negative"}>{variance >= 0 ? "+" : ""}{variance.toFixed(1)}% so với mục tiêu lợi nhuận</small> : profitTarget !== null ? <small>Mục tiêu lợi nhuận tháng: {formatVnd(profitTarget)}{periodIsOngoing ? " · đối chiếu sau khi chốt tháng." : ""}</small> : null}</article>
       </section>
       {!invalidRange ? <RevenueChart title={revenueChartTitle} description={revenueChartDescription} items={revenueChartItems} /> : null}
       {mode === "year" ? <section className="surface report-days">

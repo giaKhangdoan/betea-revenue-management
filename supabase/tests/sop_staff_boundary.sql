@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(35);
 
 insert into auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data)
 values
@@ -35,13 +35,13 @@ select set_config('request.jwt.claim.sub', '93000000-0000-4000-8000-000000000001
 select set_config('request.jwt.claims', '{"sub":"93000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 select is(public.owner_save_recipe_cost_workspace(
   0,
-  '{"unitConversions":[],"ingredients":[{"id":"tea","name":"Hồng Trà","purchaseQuantity":"1000","purchaseUnit":"g","purchasePriceVnd":"200000","costUnit":"g"}],"batches":[],"products":[{"id":"drink","name":"Trà Sữa","variants":[{"size":"S","salePriceVnd":"30000","components":[{"kind":"ingredient","ingredientId":"tea","quantity":"40","unit":"g"}]}]}]}'::jsonb,
+  '{"unitConversions":[],"ingredients":[{"id":"tea","name":"Hồng Trà","purchaseQuantity":"1000","purchaseUnit":"g","purchasePriceVnd":"200000","costUnit":"g"}],"batches":[{"id":"tea","name":"Cốt Trà","outputQuantity":"200","outputUnit":"ml","components":[{"kind":"ingredient","ingredientId":"tea","quantity":"50","unit":"g"}]}],"products":[{"id":"drink","name":"Trà Sữa","variants":[{"size":"S","salePriceVnd":"30000","components":[{"kind":"ingredient","ingredientId":"tea","quantity":"40","unit":"g"}]},{"size":"M","salePriceVnd":"40000","components":[{"kind":"batch","batchId":"tea","quantity":"10","unit":"ml"}]}]}]}'::jsonb,
   '{"calculationVersion":1,"ingredients":{"tea":{"unitCostVnd":"200"}},"batches":{},"products":{}}'::jsonb,
   'Recipe test data'
 ), 1, 'owner recipe revision is created for SOP consistency checks');
 select is(public.owner_save_sop_workspace(
   0, 1,
-  '{"products":[{"productId":"drink","variants":[{"size":"S","steps":[{"id":"step-1","title":"Ủ trà","instruction":"Ngâm 8 phút."}],"notes":"Lắc đều."}]}]}'::jsonb,
+  '{"products":[{"productId":"drink","variants":[{"size":"S","steps":[{"id":"step-1","title":"Ủ trà","instruction":"Ngâm 8 phút."}],"notes":"Lắc đều."},{"size":"M","steps":[{"id":"step-2","title":"Pha cốt","instruction":"Rót 10 ml cốt trà."}],"notes":"Khuấy đều."}]}]}'::jsonb,
   'Initial SOP'
 ), 1, 'owner saves a draft tied to recipe revision 1');
 select is((select count(*) from public.owner_sop_workspace), 1::bigint, 'owner can read the SOP draft');
@@ -50,20 +50,31 @@ do $$ begin
   begin
     perform public.owner_publish_staff_sop(
       1, 2,
-      '{"products":[{"name":"Trà Sữa","variants":[{"size":"S","sizeOz":12,"components":[{"name":"Hồng Trà","quantity":"40","unit":"g"}],"steps":[{"title":"Ủ trà","instruction":"Ngâm 8 phút."}]}]}]}'::jsonb
+      '{"products":[{"name":"Trà Sữa","variants":[{"size":"S","sizeOz":12,"components":[{"name":"Hồng Trà","quantity":"40","unit":"g"}],"steps":[{"title":"Ủ trà","instruction":"Ngâm 8 phút."}]},{"size":"M","sizeOz":17,"components":[{"name":"Cốt Trà","quantity":"10","unit":"ml"}],"steps":[{"title":"Pha cốt","instruction":"Rót 10 ml cốt trà."}],"notes":"Khuấy đều."}]}]}'::jsonb
     );
     raise exception 'SOP unexpectedly published against a stale recipe revision';
   exception when serialization_failure then null;
   end;
 end $$;
 select pass('a recipe revision mismatch blocks SOP publication');
+do $$ begin
+  begin
+    perform public.owner_publish_staff_sop(
+      1, 1,
+      '{"products":[{"name":"Trà Sữa","variants":[{"size":"S","sizeOz":12,"components":[{"name":"Hồng Trà","quantity":"40","unit":"g"}],"steps":[{"title":"Ủ trà","instruction":"Nội dung bị sửa trực tiếp."}],"notes":"Lắc đều."},{"size":"M","sizeOz":17,"components":[{"name":"Cốt Trà","quantity":"10","unit":"ml"}],"steps":[{"title":"Pha cốt","instruction":"Rót 10 ml cốt trà."}],"notes":"Khuấy đều."}]}]}'::jsonb
+    );
+    raise exception 'SOP publication unexpectedly accepted values different from the saved draft';
+  exception when sqlstate '22023' then null;
+  end;
+end $$;
+select pass('staff publication must match the saved recipe and SOP draft');
 select is(public.owner_publish_staff_sop(
   1, 1,
-  '{"privateCost":"999999","products":[{"name":"Trà Sữa","salePriceVnd":"30000","unitCostVnd":"5000","variants":[{"size":"S","sizeOz":12,"grossMarginPercent":"80","components":[{"name":"Hồng Trà","quantity":"40","unit":"g","unitCostVnd":"500","purchasePriceVnd":"200000"}],"steps":[{"title":"Ủ trà","instruction":"Ngâm 8 phút.","internalCost":"999999"}],"notes":"Lắc đều."}]}]}'::jsonb
+  '{"privateCost":"999999","products":[{"name":"Trà Sữa","salePriceVnd":"30000","unitCostVnd":"5000","variants":[{"size":"S","sizeOz":12,"grossMarginPercent":"80","components":[{"name":"Hồng Trà","quantity":"40","unit":"g","unitCostVnd":"500","purchasePriceVnd":"200000"}],"steps":[{"title":"Ủ trà","instruction":"Ngâm 8 phút.","internalCost":"999999"}],"notes":"Lắc đều."},{"size":"M","sizeOz":17,"components":[{"name":"Cốt Trà","quantity":"10","unit":"ml","unitCostVnd":"200"}],"steps":[{"title":"Pha cốt","instruction":"Rót 10 ml cốt trà.","internalCost":"999999"}],"notes":"Khuấy đều."}]}]}'::jsonb
 ), 1, 'owner publishes the first staff revision');
 select is((select document from public.staff_sop_publications where owner_id = '93000000-0000-4000-8000-000000000001'),
-  '{"products":[{"name":"Trà Sữa","variants":[{"size":"S","sizeOz":12,"components":[{"name":"Hồng Trà","quantity":"40","unit":"g"}],"steps":[{"title":"Ủ trà","instruction":"Ngâm 8 phút."}],"notes":"Lắc đều."}]}]}'::jsonb,
-  'publication is reconstructed with only the explicit staff-safe allowlist');
+  '{"products":[{"name":"Trà Sữa","variants":[{"size":"S","sizeOz":12,"components":[{"name":"Hồng Trà","quantity":"40","unit":"g"}],"steps":[{"title":"Ủ trà","instruction":"Ngâm 8 phút."}],"notes":"Lắc đều."},{"size":"M","sizeOz":17,"components":[{"name":"Cốt Trà","quantity":"10","unit":"ml"}],"steps":[{"title":"Pha cốt","instruction":"Rót 10 ml cốt trà."}],"notes":"Khuấy đều."}]}]}'::jsonb,
+  'publication resolves same-ID ingredient and batch components by kind and keeps only the explicit staff-safe allowlist');
 select ok(not ((select document from public.staff_sop_publications where owner_id = '93000000-0000-4000-8000-000000000001')::text ~* '(cost|price|margin|profit|999999|30000|200000)'), 'published JSON contains no financial fields or injected values');
 select ok(not (((select document from public.staff_sop_publications where owner_id = '93000000-0000-4000-8000-000000000001') #> '{products,0,variants,0,components,0}') ? 'unitCostVnd'), 'nested ingredient data contains no unit cost');
 do $$ begin

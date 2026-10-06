@@ -1,11 +1,11 @@
 import { Buffer } from "node:buffer";
 import type { createClient } from "@/lib/supabase/server";
-import { currentBusinessDate } from "../finance/format";
+import { addDays, currentBusinessDate } from "../finance/format";
 import {
   compareInventoryTimestamps,
   formatInventoryMicros,
   formatInventoryQuantity,
-  getFinalizedInventoryCountHistory,
+  getFinalizedInventoryCountHistoryForIds,
   sameInventoryUnit,
   summarizeInventoryMovement,
   toInventoryMicros,
@@ -13,9 +13,15 @@ import {
   type InventoryCountItem,
   type InventoryFinalizedCount,
 } from "./counts";
-import { getInventoryReceipts, type InventoryReceipt } from "./receipts";
+import {
+  getInventoryReceiptsForExport,
+  MAX_INVENTORY_EXPORT_RECEIPTS,
+  type InventoryReceipt,
+} from "./receipts";
 
 type ServerSupabaseClient = NonNullable<Awaited<ReturnType<typeof createClient>>>;
+type InventoryExportQuery<T> = { data: T; error: boolean; errorCode?: "too_large" };
+type InventoryExportIds = { ids: string[]; error: boolean; errorCode?: "too_large" };
 
 export type InventoryExportCount = InventoryCount & { items: InventoryCountItem[] };
 
@@ -25,7 +31,116 @@ export type InventoryExportData = {
   receipts: InventoryReceipt[];
 };
 
-async function getCountsInRange(supabase: ServerSupabaseClient, ownerId: string, from: string, to: string) {
+export const MAX_INVENTORY_EXPORT_DAYS = 366;
+const MAX_INVENTORY_EXPORT_COUNTS = 2_000;
+const MAX_INVENTORY_EXPORT_COUNT_ITEMS = 50_000;
+const MAX_INVENTORY_EXPORT_HISTORY_VERSIONS = 50_000;
+
+export function isInventoryExportRangeWithinLimit(from: string, to: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return false;
+  const fromDate = new Date(`${from}T00:00:00Z`);
+  const toDate = new Date(`${to}T00:00:00Z`);
+  if (!Number.isFinite(fromDate.getTime()) || !Number.isFinite(toDate.getTime())
+    || fromDate.toISOString().slice(0, 10) !== from || toDate.toISOString().slice(0, 10) !== to) return false;
+  const fromDays = Date.UTC(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1, Number(from.slice(8, 10)));
+  const toDays = Date.UTC(Number(to.slice(0, 4)), Number(to.slice(5, 7)) - 1, Number(to.slice(8, 10)));
+  const span = (toDays - fromDays) / 86_400_000 + 1;
+  return Number.isInteger(span) && span <= MAX_INVENTORY_EXPORT_DAYS;
+}
+
+function vietnamStartOfDay(date: string) {
+  return new Date(`${date}T00:00:00+07:00`).toISOString();
+}
+
+async function getFinalizedCountHeadersBetween(
+  supabase: ServerSupabaseClient,
+  ownerId: string,
+  from: string,
+  until: string,
+): Promise<InventoryExportQuery<{ id: string; business_date: string; finalized_at: string }[]>> {
+  const headers: { id: string; business_date: string; finalized_at: string }[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.from("inventory_counts")
+      .select("id,business_date,finalized_at")
+      .eq("owner_id", ownerId).eq("status", "finalized").not("finalized_at", "is", null)
+      .gte("finalized_at", from).lt("finalized_at", until)
+      .order("finalized_at").order("id").range(offset, offset + 999);
+    if (error) return { data: [] as typeof headers, error: true };
+    headers.push(...(data ?? []).filter((row) => row.finalized_at !== null));
+    if (headers.length > MAX_INVENTORY_EXPORT_COUNTS) return { data: [] as typeof headers, error: true, errorCode: "too_large" as const };
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  return { data: headers, error: false };
+}
+
+async function getLatestFinalizedCountBefore(supabase: ServerSupabaseClient, ownerId: string, before: string): Promise<InventoryExportQuery<{ id: string; business_date: string; finalized_at: string }[]>> {
+  const { data, error } = await supabase.from("inventory_counts")
+    .select("id,business_date,finalized_at")
+    .eq("owner_id", ownerId).eq("status", "finalized").not("finalized_at", "is", null)
+    .lt("finalized_at", before).order("finalized_at", { ascending: false }).order("id", { ascending: false }).limit(1);
+  return { data: (data ?? []).filter((row) => row.finalized_at !== null), error: Boolean(error) };
+}
+
+async function getEarliestReceipt(supabase: ServerSupabaseClient, ownerId: string): Promise<InventoryExportQuery<{ id: string; received_at: string } | null>> {
+  const { data, error } = await supabase.from("inventory_receipts")
+    .select("id,received_at").eq("owner_id", ownerId)
+    .order("received_at").order("id").limit(1);
+  return { data: data?.[0] ?? null, error: Boolean(error) };
+}
+
+async function getFirstReceiptInRange(supabase: ServerSupabaseClient, ownerId: string, from: string, until: string): Promise<InventoryExportQuery<{ id: string; received_at: string } | null>> {
+  const { data, error } = await supabase.from("inventory_receipts")
+    .select("id,received_at").eq("owner_id", ownerId)
+    .gte("received_at", from).lt("received_at", until)
+    .order("received_at").order("id").limit(1);
+  return { data: data?.[0] ?? null, error: Boolean(error) };
+}
+
+export async function getInventoryReceiptEventIdsBetween(supabase: ServerSupabaseClient, ownerId: string, from: string, until: string): Promise<InventoryExportIds> {
+  const ids = new Set<string>();
+  const maxRows = MAX_INVENTORY_EXPORT_RECEIPTS;
+  const maxEvents = 50_000;
+  const queries = [
+    { table: "inventory_receipt_versions", column: "effective_at", idColumn: "receipt_id" },
+    { table: "inventory_receipts", column: "received_at", idColumn: "id" },
+    { table: "inventory_receipts", column: "updated_at", idColumn: "id" },
+  ] as const;
+  for (const source of queries) {
+    let rowCount = 0;
+    for (let offset = 0; ; offset += 1000) {
+      const query = source.table === "inventory_receipt_versions"
+        ? supabase.from("inventory_receipt_versions")
+          .select("receipt_id")
+          .eq("owner_id", ownerId).gte("effective_at", from).lte("effective_at", until)
+          .order("effective_at").order("receipt_id").order("sequence_no")
+          .range(offset, offset + 999)
+        : source.column === "received_at"
+          ? supabase.from("inventory_receipts")
+            .select("id")
+            .eq("owner_id", ownerId).gte("received_at", from).lte("received_at", until)
+            .order("received_at").order("id")
+            .range(offset, offset + 999)
+          : supabase.from("inventory_receipts")
+            .select("id")
+            .eq("owner_id", ownerId).gte("updated_at", from).lte("updated_at", until)
+            .order("updated_at").order("id")
+            .range(offset, offset + 999);
+      const { data, error } = await query;
+      if (error) return { ids: [] as string[], error: true };
+      rowCount += data?.length ?? 0;
+      if (rowCount > maxEvents) return { ids: [] as string[], error: true, errorCode: "too_large" as const };
+      for (const row of data ?? []) {
+        const receiptId = (row as Record<string, unknown>)[source.idColumn];
+        if (typeof receiptId === "string") ids.add(receiptId);
+      }
+      if (ids.size > maxRows) return { ids: [] as string[], error: true, errorCode: "too_large" as const };
+      if ((data?.length ?? 0) < 1000) break;
+    }
+  }
+  return { ids: [...ids], error: false };
+}
+
+async function getCountsInRange(supabase: ServerSupabaseClient, ownerId: string, from: string, to: string): Promise<InventoryExportQuery<InventoryExportCount[]>> {
   const headers: InventoryCount[] = [];
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await supabase.from("inventory_counts")
@@ -34,18 +149,23 @@ async function getCountsInRange(supabase: ServerSupabaseClient, ownerId: string,
       .order("business_date").order("id").range(offset, offset + 999);
     if (error) return { data: [] as InventoryExportCount[], error: true };
     headers.push(...data ?? []);
+    if (headers.length > MAX_INVENTORY_EXPORT_COUNTS) return { data: [] as InventoryExportCount[], error: true, errorCode: "too_large" as const };
     if ((data?.length ?? 0) < 1000) break;
   }
 
   const itemsByCount = new Map<string, InventoryCountItem[]>();
+  let itemCount = 0;
   for (let offset = 0; offset < headers.length; offset += 1000) {
     const ids = headers.slice(offset, offset + 1000).map(({ id }) => id);
     for (let itemOffset = 0; ; itemOffset += 1000) {
       const { data, error } = await supabase.from("inventory_count_items")
         .select("count_id,item_id,item_name,category,large_unit,conversion_factor,small_unit,large_quantity,small_quantity,counted_quantity,counted_at,sort_order")
         .eq("owner_id", ownerId).in("count_id", ids)
-        .order("count_id").order("sort_order").order("category").order("item_name").range(itemOffset, itemOffset + 999);
+        .order("count_id").order("sort_order").order("category").order("item_name").order("item_id")
+        .range(itemOffset, itemOffset + 999);
       if (error) return { data: [] as InventoryExportCount[], error: true };
+      itemCount += data?.length ?? 0;
+      if (itemCount > MAX_INVENTORY_EXPORT_COUNT_ITEMS) return { data: [] as InventoryExportCount[], error: true, errorCode: "too_large" as const };
       for (const item of data ?? []) {
         const items = itemsByCount.get(item.count_id) ?? [];
         items.push(item);
@@ -62,14 +182,114 @@ async function getCountsInRange(supabase: ServerSupabaseClient, ownerId: string,
 }
 
 export async function getInventoryExportData(supabase: ServerSupabaseClient, ownerId: string, from: string, to: string) {
-  const [counts, finalized, receipts] = await Promise.all([
-    getCountsInRange(supabase, ownerId, from, to),
-    getFinalizedInventoryCountHistory(supabase, ownerId),
-    getInventoryReceipts(supabase, ownerId),
+  if (!isInventoryExportRangeWithinLimit(from, to)) {
+    return { data: { counts: [], finalizedCounts: [], receipts: [] }, error: true, errorCode: "range_too_large" as const };
+  }
+  const dateFrom = vietnamStartOfDay(from);
+  const dateUntil = vietnamStartOfDay(addDays(to, 1));
+  const counts = await getCountsInRange(supabase, ownerId, from, to);
+  if (counts.error) return {
+    data: { counts: [], finalizedCounts: [], receipts: [] }, error: true,
+    ...(counts.errorCode ? { errorCode: counts.errorCode } : {}),
+  };
+
+  const selectedFinalized = counts.data.filter((count) => count.status === "finalized" && count.finalized_at)
+    .map((count) => ({ id: count.id, business_date: count.business_date, finalized_at: count.finalized_at! }));
+  const [receiptDateCounts, receiptDatePredecessor, firstReceipt] = await Promise.all([
+    getFinalizedCountHeadersBetween(supabase, ownerId, dateFrom, dateUntil),
+    getLatestFinalizedCountBefore(supabase, ownerId, dateFrom),
+    getFirstReceiptInRange(supabase, ownerId, dateFrom, dateUntil),
   ]);
+  if (receiptDateCounts.error || receiptDatePredecessor.error || firstReceipt.error) {
+    return {
+      data: { counts: [], finalizedCounts: [], receipts: [] }, error: true,
+      ...((receiptDateCounts.errorCode || receiptDatePredecessor.errorCode)
+        ? { errorCode: "too_large" as const }
+        : {}),
+    };
+  }
+
+  const movementHeaders = new Map<string, { id: string; business_date: string; finalized_at: string }>();
+  let movementEventWindow: { from: string; until: string } | null = null;
+  if (selectedFinalized.length > 0) {
+    const times = selectedFinalized.map((count) => Date.parse(count.finalized_at));
+    const firstTime = Math.min(...times);
+    const lastTime = Math.max(...times);
+    if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime)
+      || lastTime - firstTime > MAX_INVENTORY_EXPORT_DAYS * 86_400_000) {
+      return { data: { counts: [], finalizedCounts: [], receipts: [] }, error: true, errorCode: "range_too_large" as const };
+    }
+    const movementFrom = new Date(firstTime).toISOString();
+    const movementUntil = new Date(lastTime + 1).toISOString();
+    const [inWindow, predecessor] = await Promise.all([
+      getFinalizedCountHeadersBetween(supabase, ownerId, movementFrom, movementUntil),
+      getLatestFinalizedCountBefore(supabase, ownerId, movementFrom),
+    ]);
+    if (inWindow.error || predecessor.error) return {
+      data: { counts: [], finalizedCounts: [], receipts: [] }, error: true,
+      ...((inWindow.errorCode || predecessor.errorCode) ? { errorCode: "too_large" as const } : {}),
+    };
+    for (const header of [...inWindow.data, ...predecessor.data]) movementHeaders.set(header.id, header);
+    if (selectedFinalized.length > 1 || predecessor.data.length > 0) {
+      movementEventWindow = {
+        from: predecessor.data[0]?.finalized_at ?? movementFrom,
+        until: new Date(lastTime).toISOString(),
+      };
+    }
+  }
+
+  for (const header of [...selectedFinalized, ...receiptDateCounts.data, ...receiptDatePredecessor.data]) movementHeaders.set(header.id, header);
+  if (movementHeaders.size > MAX_INVENTORY_EXPORT_COUNTS) {
+    return { data: { counts: [], finalizedCounts: [], receipts: [] }, error: true, errorCode: "too_large" as const };
+  }
+  const firstReceiptBaseline = firstReceipt.data
+    ? await getLatestFinalizedCountBefore(supabase, ownerId, firstReceipt.data.received_at)
+    : { data: [] as { id: string; business_date: string; finalized_at: string }[], error: false };
+  if (firstReceiptBaseline.error) return { data: { counts: [], finalizedCounts: [], receipts: [] }, error: true };
+  for (const header of firstReceiptBaseline.data) movementHeaders.set(header.id, header);
+
+  let receiptHistoryFrom = firstReceiptBaseline.data[0]?.finalized_at ?? dateFrom;
+  if (firstReceipt.data && firstReceiptBaseline.data.length === 0) {
+    const earliestReceipt = await getEarliestReceipt(supabase, ownerId);
+    if (earliestReceipt.error) return { data: { counts: [], finalizedCounts: [], receipts: [] }, error: true };
+    receiptHistoryFrom = earliestReceipt.data?.received_at ?? dateFrom;
+  }
+
+  const finalizedIds = [...movementHeaders.keys()];
+  if (finalizedIds.length > MAX_INVENTORY_EXPORT_COUNTS) {
+    return { data: { counts: [], finalizedCounts: [], receipts: [] }, error: true, errorCode: "too_large" as const };
+  }
+  const [finalized, receiptEventIds] = await Promise.all([
+    getFinalizedInventoryCountHistoryForIds(supabase, ownerId, finalizedIds, {
+      maxItems: MAX_INVENTORY_EXPORT_HISTORY_VERSIONS,
+      maxVersions: MAX_INVENTORY_EXPORT_HISTORY_VERSIONS,
+    }),
+    movementEventWindow
+      ? getInventoryReceiptEventIdsBetween(
+        supabase,
+        ownerId,
+        movementEventWindow.from,
+        movementEventWindow.until,
+      )
+      : Promise.resolve({ ids: [] as string[], error: false } as InventoryExportIds),
+  ]);
+  if (finalized.error || receiptEventIds.error) {
+    return {
+      data: { counts: [], finalizedCounts: [], receipts: [] }, error: true,
+      ...((finalized.errorCode || receiptEventIds.errorCode) ? { errorCode: "too_large" as const } : {}),
+    };
+  }
+
+  const receipts = await getInventoryReceiptsForExport(supabase, ownerId, {
+    receivedFrom: receiptHistoryFrom,
+    receivedUntil: dateUntil,
+    additionalReceiptIds: receiptEventIds.ids,
+    historyReceiptIds: receiptEventIds.ids,
+  });
   return {
     data: { counts: counts.data, finalizedCounts: finalized.data, receipts: receipts.data },
-    error: counts.error || finalized.error || receipts.error,
+    error: receipts.error,
+    ...(receipts.errorCode ? { errorCode: receipts.errorCode } : {}),
   };
 }
 

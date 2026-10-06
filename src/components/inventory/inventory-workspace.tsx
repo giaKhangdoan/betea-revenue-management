@@ -3,7 +3,7 @@ import { formatBusinessDate, monthStart } from "@/lib/finance/format";
 import type { InventoryItem } from "@/lib/inventory/catalog";
 import type { InventoryCatalogItem } from "@/lib/inventory/catalog";
 import type { InventoryReceipt } from "@/lib/inventory/receipts";
-import { formatInventoryQuantity, getInventoryItemsNeedingRecount, type InventoryCount, type InventoryCountItem, type InventoryMovementSummary } from "@/lib/inventory/counts";
+import { formatInventoryQuantity, type InventoryCount, type InventoryCountItem, type InventoryMovementSummary } from "@/lib/inventory/counts";
 import { InventoryReceivingPanel } from "@/components/inventory/inventory-receiving-panel";
 import { InventoryCountDashboardBackButton, InventoryCountEditor, InventoryCountNavigationProvider, OpenInventoryCountForm } from "@/components/inventory/inventory-count-forms";
 import { InventoryCatalogManager } from "@/components/inventory/inventory-catalog-manager";
@@ -25,15 +25,21 @@ function receiptQuantity(line: InventoryMovementSummary["receiptsSinceLatest"][n
     : `${formatInventoryQuantity(line.loose_quantity ?? null) ?? "—"} ${line.small_unit}`;
 }
 
-function InventoryMovementPanel({ summary, error, owner }: { summary: InventoryMovementSummary; error: boolean; owner: boolean }) {
+export function InventoryMovementPanel({ summary, error, owner }: { summary: InventoryMovementSummary; error: boolean; owner: boolean }) {
+  if (!owner) return <section className="surface inventory-panel inventory-movement-panel">
+    <div className="section-heading"><div><h2>Mốc kiểm và biến động</h2><p>Lịch sử biến động chỉ dành cho quản trị viên.</p></div></div>
+    <p className="inventory-history-warning" role="status">Nhân viên không xem được biến động tồn kho vì lịch sử xác minh chỉ quản trị viên được phép truy cập. Nhân viên vẫn có thể xem bản kiểm và phiếu nhập trong các mục được cấp quyền.</p>
+  </section>;
+
   const latest = summary.latest;
   return <section className="surface inventory-panel inventory-movement-panel">
-    <div className="section-heading"><div><h2>Mốc kiểm và biến động</h2><p>{owner ? "Chủ xem mọi kỳ." : "Nhân viên chỉ xem dữ liệu trong tuần hiện tại."}</p></div></div>
+    <div className="section-heading"><div><h2>Mốc kiểm và biến động</h2><p>Chủ xem mọi kỳ.</p></div></div>
     {error ? <div className="empty-state"><h3>Chưa tải được lịch sử kho</h3><p>Vui lòng tải lại trang sau ít phút.</p></div> : <>
       <section className="inventory-movement-block">
-        <h3>Số đếm chốt gần nhất</h3>
+        <h3>{latest?.history_integrity?.status === "unverified" ? "Dữ liệu tồn đang lưu gần nhất" : "Số đếm chốt gần nhất"}</h3>
         {latest ? <>
           <p className="inventory-movement-note">{formatBusinessDate(latest.business_date, { day: "numeric", month: "long", year: "numeric" })} · chốt lúc {formatInventoryTimestamp(latest.finalized_at)}.</p>
+          {latest.history_integrity?.status === "unverified" ? <p className="inventory-history-warning" role="status">Lịch sử chưa xác minh — cần đối chiếu. {latest.history_integrity.reason ?? "Các số bên dưới là dữ liệu hiện lưu, chưa xác nhận là số tại lúc chốt."}</p> : null}
           {latest.items.length === 0 ? <p className="empty-inline">Bản kiểm không có mặt hàng.</p> : <ul className="inventory-movement-list">{latest.items.map((item) => <li className="inventory-movement-row" key={item.item_id}>
             <strong>{item.item_name}</strong><span>{countQuantity(item)}</span>
           </li>)}</ul>}
@@ -45,7 +51,8 @@ function InventoryMovementPanel({ summary, error, owner }: { summary: InventoryM
         <p className="inventory-movement-note">Phiếu được liệt kê riêng; không cộng vào số đếm để suy ra tồn hiện tại.</p>
         {summary.receiptsSinceLatest.length === 0 ? <p className="empty-inline">Chưa có phiếu nhập {latest ? "sau mốc này" : "trong phạm vi này"}.</p> : <div className="inventory-receipt-list">{summary.receiptsSinceLatest.map((receipt) => <article className="inventory-receipt" key={receipt.id}>
           <div className="inventory-receipt-heading"><div><h3>{receipt.receipt_code}</h3><p>{formatInventoryTimestamp(receipt.received_at)} · {receipt.created_by_label}</p></div></div>
-          <ul className="inventory-receipt-lines">{receipt.lines.map((line, index) => <li key={`${receipt.id}-${index}`}><div><strong>{line.item_name}</strong></div><strong>{receiptQuantity(line)}</strong></li>)}</ul>
+          {receipt.history_integrity?.status === "unverified" ? <p className="inventory-history-warning" role="status">Lịch sử phiếu chưa xác minh — cần đối chiếu. Không dùng dòng hàng hiện lưu để kết luận số lượng tại lúc nhập. {receipt.history_integrity.reason}</p>
+            : <ul className="inventory-receipt-lines">{receipt.lines.map((line, index) => <li key={`${receipt.id}-${index}`}><div><strong>{line.item_name}</strong></div><strong>{receiptQuantity(line)}</strong></li>)}</ul>}
         </article>)}</div>}
       </section>
 
@@ -54,9 +61,10 @@ function InventoryMovementPanel({ summary, error, owner }: { summary: InventoryM
         <p className="inventory-movement-note">Số dương hoặc âm chỉ mô tả biến động theo các số đếm và phiếu nhập; không kết luận thất thoát.</p>
         <div className="inventory-period-list">{[...summary.periods].reverse().map((period, index) => <details className="inventory-period" key={`${period.previous_count.id}-${period.current_count.id}`} open={index === 0}>
           <summary>{formatBusinessDate(period.previous_count.business_date)} → {formatBusinessDate(period.current_count.business_date)}</summary>
+          {period.history_unverified ? <p className="inventory-history-warning" role="status">Lịch sử chưa xác minh — cần đối chiếu. {period.history_unverified_reasons?.join(" ")}</p> : null}
           <ul className="inventory-movement-list">{period.items.map((item) => <li className="inventory-movement-detail" key={item.item_id}>
-            <div><strong>{item.item_name}</strong><span>{item.unit_changed ? "Đơn vị tồn không nhất quán trong kỳ." : item.conversion_unavailable ? "Có hai đơn vị nhưng không có hệ số để cộng." : `${item.previous_quantity ?? "Chưa có mốc"} + ${item.received_quantity} − ${item.current_quantity ?? "Chưa có mốc"} ${item.small_unit}`}</span></div>
-            <strong>{item.unit_changed || item.conversion_unavailable ? "Không so sánh được" : item.movement_sign === null ? "Chưa đủ mốc" : `${item.movement_sign > 0 ? "+" : item.movement_sign < 0 ? "−" : ""}${item.movement_quantity} ${item.small_unit}`}</strong>
+            <div><strong>{item.item_name}</strong><span>{item.history_unverified ? "Lịch sử chưa xác minh; cần đối chiếu trước khi dùng kết quả." : item.unit_changed ? "Đơn vị tồn không nhất quán trong kỳ." : item.conversion_unavailable ? "Có hai đơn vị nhưng không có hệ số để cộng." : `${item.previous_quantity ?? "Chưa có mốc"} + ${item.received_quantity} − ${item.current_quantity ?? "Chưa có mốc"} ${item.small_unit}`}</span></div>
+            <strong>{item.history_unverified ? "Cần đối chiếu" : item.unit_changed || item.conversion_unavailable ? "Không so sánh được" : item.movement_sign === null ? "Chưa đủ mốc" : `${item.movement_sign > 0 ? "+" : item.movement_sign < 0 ? "−" : ""}${item.movement_quantity} ${item.small_unit}`}</strong>
           </li>)}</ul>
         </details>)}</div>
       </section> : null}
@@ -69,8 +77,9 @@ export function InventoryWorkspace({
   items,
   catalogItems,
   receipts,
-  movement,
-  movementError,
+  receiptHasMore = false,
+  receiptNextCursor = null,
+  needsRecountItemIds = [],
   tab,
   error,
   receivingError,
@@ -88,8 +97,9 @@ export function InventoryWorkspace({
   items: InventoryItem[];
   catalogItems: InventoryCatalogItem[];
   receipts: InventoryReceipt[];
-  movement: InventoryMovementSummary;
-  movementError: boolean;
+  receiptHasMore?: boolean;
+  receiptNextCursor?: { receivedAt: string; id: string } | null;
+  needsRecountItemIds?: string[];
   tab: "stock" | "receiving" | "catalog";
   error: boolean;
   receivingError: boolean;
@@ -103,8 +113,6 @@ export function InventoryWorkspace({
   countItems: InventoryCountItem[];
   countError: boolean;
 }) {
-  const needsRecountItemIds = tab === "stock" && count ? [...getInventoryItemsNeedingRecount(countItems, receipts, count.status === "draft")] : [];
-
   return <InventoryCountNavigationProvider destination={owner ? "/" : "/staff/dashboard"}><>
     <div className="page-heading">
       <div className="inventory-page-heading-title"><InventoryCountDashboardBackButton /><div><p className="eyebrow">QUẢN LÝ CỬA HÀNG</p><h1>Kho</h1><p>Danh mục hàng hóa và các đơn vị quy đổi.</p></div></div>
@@ -116,6 +124,11 @@ export function InventoryWorkspace({
       {owner ? <Link className="inventory-tab" href={`${basePath}?tab=catalog`} aria-current={tab === "catalog" ? "page" : undefined}>Danh mục</Link> : null}
     </nav>
 
+    {owner && tab !== "catalog" ? <div className="inventory-history-entry">
+      <Link className="button button-secondary" href="/inventory/history">Lịch sử kho</Link>
+      <span>Lịch sử chỉ tải khi bạn mở mục này.</span>
+    </div> : null}
+
     {owner && tab === "stock" ? <form className="inventory-date-filter" action="/inventory/export" method="get">
       <label className="field"><span>Từ ngày</span><input type="date" name="from" defaultValue={monthStart(today)} max={today} required /></label>
       <label className="field"><span>Đến ngày</span><input type="date" name="to" defaultValue={today} max={today} required /></label>
@@ -125,10 +138,6 @@ export function InventoryWorkspace({
     {tab === "catalog" && owner ? <section className="surface inventory-panel">{error
       ? <div className="empty-state"><h2>Chưa tải được danh mục</h2><p>Vui lòng tải lại trang sau ít phút.</p></div>
       : <InventoryCatalogManager items={catalogItems} />}</section> : tab === "stock" ? <>
-      {owner ? <InventoryMovementPanel summary={movement} error={movementError} owner /> : <details className="inventory-history">
-        <summary>Lịch sử kho</summary>
-        <InventoryMovementPanel summary={movement} error={movementError} owner={false} />
-      </details>}
       <form className="inventory-date-filter" method="get" action={basePath}>
         <input type="hidden" name="tab" value="stock" />
         <label className="field"><span>Ngày kiểm</span><input type="date" name="date" defaultValue={date} min={owner ? undefined : weekStart} max={owner ? today : weekEnd} /></label>
@@ -150,6 +159,6 @@ export function InventoryWorkspace({
           {error ? null : items.length === 0 ? <div className="empty-state"><h2>Chưa có mặt hàng</h2><p>Danh mục sẽ xuất hiện sau khi dữ liệu kho được khởi tạo.</p></div> : <ul className="inventory-item-list">{items.map((item) => <li className="inventory-item" key={item.id}><div className="inventory-item-heading"><strong>{item.name}</strong><span className="status status-neutral">{item.category}</span></div><p>{!item.large_unit ? `Kiểm theo ${item.small_unit}` : item.conversion_factor == null ? `Kiểm riêng ${item.large_unit} và ${item.small_unit}` : item.count_large_unit_only ? `Kiểm theo ${item.large_unit}` : `1 ${item.large_unit} = ${Number(item.conversion_factor).toLocaleString("vi-VN")} ${item.small_unit}`}</p></li>)}</ul>}
         </>}
       </section>
-    </> : <InventoryReceivingPanel items={items} receipts={receipts} receivingError={receivingError} canCreate={canCreateReceipts} owner={owner} today={today} />}
+    </> : <InventoryReceivingPanel items={items} receipts={receipts} receivingError={receivingError} canCreate={canCreateReceipts} owner={owner} today={today} hasMore={receiptHasMore} nextCursor={receiptNextCursor} pageBaseHref={owner ? "/inventory/history" : basePath} />}
   </></InventoryCountNavigationProvider>;
 }

@@ -153,6 +153,8 @@ export async function saveStaffEntryAction(
 
   if (error) {
     if (error.message.includes("today") || error.message.includes("edit today")) return { error: "Ngày này đã qua hoặc chưa đến giờ nhập. Nhân viên chỉ sửa được ngày hiện tại." };
+    if (error.message.includes("already been reviewed")) return { error: "Khoản chi này đã được admin đối chiếu với phiếu mua nên không thể sửa hoặc xóa. Hãy nhờ admin kiểm tra." };
+    if (error.message.includes("finalized purchase")) return { error: "Chưa lưu khoản chi vì khoản này giống phiếu mua cá nhân đã chốt. Báo admin kiểm tra và ghi nhận nếu đây là giao dịch khác." };
     return { error: "Chưa lưu được số liệu. Hãy kiểm tra quyền truy cập và thử lại." };
   }
   revalidateStaff(date.data);

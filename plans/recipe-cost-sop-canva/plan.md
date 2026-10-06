@@ -3,15 +3,15 @@
 Ngày: 05/10/2026<br>
 Mode: Hard<br>
 Risk: high-risk — thêm schema dữ liệu giá/công thức, lưu lịch sử cost, phân quyền owner/staff và kết nối OAuth/API Canva.
-Trạng thái: Phase 04 đã hoàn tất cục bộ, được duyệt hard-mode và ghi nhận; Phase 03 vẫn còn 972 mục workbook chờ owner đối soát, chưa import production. Canva vẫn ở integration gate của Phase 01.
+Trạng thái: Phase 04 đã hoàn tất cục bộ, được duyệt hard-mode và ghi nhận. Phase 06 đang được xác minh cục bộ: RLS/Data API và bộ kiểm thử hiện có đạt; chưa thể hoàn tất vì Phase 03 còn 972 mục workbook cần owner đối soát, Phase 05 chưa bắt đầu, và các cổng Canva/preview chưa qua. Không có production migration, deploy hoặc push.
 
 ## Session Notes
 
 <!-- Updated by cook automatically — do not edit manually -->
 
-**Last active:** 2026-10-06 13:59 +07
-**Phase in progress:** phase-03-owner-cost-workspace-import
-**Status:** Phase 04 is finalized locally after owner approval of Cook Hard Step 5. Documentation is updated. Verification: 76 unit tests, 139 pgTAP assertions across 7 SQL files, lint, typecheck, production build, and read-only code review pass. No production migration, deployment, or push. Phase 03 remains locally implemented with 972 workbook review items pending; no production import.
+**Last active:** 2026-10-06 14:29 +07
+**Phase in progress:** phase-06-security-validation-rollout
+**Status:** Local security validation passed: 140 pgTAP assertions across 7 files, 9 direct PostgREST role-boundary checks, 76 unit tests, lint, typecheck, build, and a local recipe-save regression preserving monthly POS COGS. A local app-database dump restored into a disposable database with Supabase-managed `realtime` and `vault` schemas excluded; R2 image recovery remains unverified. Phase 06 stays active: workbook reconciliation, accepted-data performance, Canva, and preview review remain open. No production migration, deployment, or push.
 
 ### Decisions made this session
 - Keep the owner workspace and immutable history snapshot in one JSONB document transaction with optimistic revision checks.
@@ -21,9 +21,12 @@ Trạng thái: Phase 04 đã hoàn tất cục bộ, được duyệt hard-mode 
 - Bind preview/confirm to the workspace revision, enforce upload limits while reading the request body, neutralize formula-like CSV values, and display gross margin by size.
 - For draft inventory counts, identify entries made stale by a later receipt/correction, allow an explicit same-value physical recount, and keep finalized counts free of stale warnings.
 - Canva remains unchanged until its Phase 01 integration gate is verified.
+- Use isolated local Supabase project `betea-sop-verify-20261006` with Studio excluded after the container health check failed; pgTAP and direct Data API checks passed. Stop and delete its test data after verification; do not touch the separate local stack on port 54322.
+- Bind staff SOP publication to the saved, locked recipe and SOP revisions in the database RPC; verify forged payload rejection and preserve a same-ID ingredient/batch regression fixture.
+- Keep Phase 06 active until workbook owner review, Canva gates, performance/recovery checks, and the planned preview review are complete.
 
 ### Next immediate action
-Continue Phase 03 only after owner review of the 972 workbook mapping items. Keep Canva integration behind its Phase 01 gate; no production migration or deployment is authorized by this phase.
+Wait for owner review of the 972 workbook items and Canva's permission/API/employee-URL gates. Once those inputs are resolved, run representative formula comparisons, accepted-workbook performance checks, R2 recovery verification, and preview review. Do not push or deploy production as part of this local validation.
 
 ## Scope challenge
 
@@ -79,7 +82,8 @@ Continue Phase 03 only after owner review of the 972 workbook mapping items. Kee
 
 - [x] Phase 02: Schema and cost engine — local migrations, 24 pgTAP assertions, 39 unit tests, typecheck, lint and build pass.
 - [ ] Phase 03: Owner cost workspace and import — implemented locally; code review 10/10; awaiting owner review. Workbook S/M/L recipe reconciliation remains open.
-- [x] Phase 04: SOP editor and staff-safe view — owner editor, revision-checked save/publish, and allowlisted staff projection implemented; 76 unit tests, all 139 pgTAP assertions across 7 SQL files, lint, typecheck, build and read-only code review pass. Recount follow-up fixes a full-suite inventory UI gap; no production migration or deployment.
+- [x] Phase 04: SOP editor and staff-safe view — owner editor, revision-checked save/publish, and database-bound staff projection implemented; 76 unit tests, all 140 pgTAP assertions across 7 SQL files, lint, typecheck, build and read-only code review pass. Direct owner RPC rejects a staff projection that differs from the saved recipe/SOP; same-ID ingredient/batch regression passes. Recount follow-up fixes a full-suite inventory UI gap; no production migration or deployment.
+- [ ] Phase 06: Kiểm chứng quyền và rollout — local role/API tests, application checks and database restore rehearsal pass; pending workbook review, Canva gates, accepted-data performance, R2 image recovery and preview owner review. No production migration, deploy or push.
 
 ## Phases
 

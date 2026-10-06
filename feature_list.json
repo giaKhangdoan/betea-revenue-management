@@ -143,7 +143,7 @@
     "id": "phase-04-sop-staff-safe-view",
     "title": "Biên tập SOP và màn hình staff an toàn",
     "status": "passing",
-    "evidence": "Owner editor, revision-checked draft save/publish and allowlisted staff SOP projection implemented. Verification: 76 unit tests and all 139 pgTAP assertions across 7 SQL files pass on clean isolated local Supabase; lint, typecheck, production build and read-only code review pass. Recount follow-up exposes explicit same-value recheck for draft inventory counts, and finalized counts are not marked stale. No production migration or deployment.",
+    "evidence": "Owner editor, revision-checked draft save/publish and database-bound staff SOP projection implemented. Verification: 76 unit tests and all 140 pgTAP assertions across 7 SQL files pass on clean isolated local Supabase; lint, typecheck, production build and read-only code review pass. Direct owner RPC rejects a projection that differs from the saved SOP/recipe; same-ID ingredient/batch regression passes. Recount follow-up exposes explicit same-value recheck for draft inventory counts, and finalized counts are not marked stale. No production migration or deployment.",
     "user_visible_behavior": "Owner biên tập SOP gắn với recipe; staff chỉ xem hướng dẫn và định lượng pha, không nhận dữ liệu cost.",
     "verification_command": "Staff chỉ đọc SOP được phép; truy cập trực tiếp API/route không trả giá mua, cost, lãi hoặc lịch sử.",
     "notes": "Covers stories: US-05, US-06",
@@ -162,11 +162,71 @@
   {
     "id": "phase-06-security-validation-rollout",
     "title": "Kiểm chứng quyền và rollout",
-    "status": "not_started",
-    "evidence": "",
+    "status": "active",
+    "evidence": "Partial local validation: 140 pgTAP assertions across 7 SQL files, 9 direct PostgREST role-boundary checks, 76 unit tests, lint/typecheck/build pass, and recipe-save regression preserved monthly POS COGS. A local app-database dump restored into a disposable database with Supabase-managed realtime/vault schemas excluded; R2 image recovery remains unverified. Workbook has 972 unresolved review items; Canva Phase 05, accepted-workbook performance, preview and rollout gates remain open. No production migration, deployment or push.",
     "user_visible_behavior": "Cost và lịch sử chỉ quản lý xem được; công thức đối chiếu với workbook và thay đổi được phát hành an toàn.",
     "verification_command": "RLS role matrix pass; 5 công thức đại diện đối chiếu; typecheck/lint/test/build pass; owner kiểm tra và tự publish Canva.",
     "notes": "Covers stories: US-01, US-02, US-03, US-04, US-05, US-06, US-07, US-08",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-01-inventory-history",
+    "title": "Preserve inventory history",
+    "status": "passing",
+    "evidence": "Legacy backfill verified on isolated fixtures; ambiguous/tied histories suppressed; pgTAP 29/29, Vitest 81/81, typecheck/lint pass; independent review approved.",
+    "user_visible_behavior": "Sửa phiếu nhập hoặc bản kiểm đã chốt tạo sự kiện có thời điểm và không âm thầm đổi kỳ lịch sử.",
+    "verification_command": "Unit/SQL regression: correction sau mốc chốt chỉ ảnh hưởng từ thời điểm correction; migration backfill phân loại mọi dòng tái dựng được/không được.",
+    "notes": "Covers stories: ADV-02, INV-01",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-02-advance-database",
+    "title": "Owner advance schema and transactional rules",
+    "status": "passing",
+    "evidence": "Clean reset on isolated local Supabase; all 9 pgTAP files passed (205 assertions), including owner boundary 36/36 and inventory history 29/29. Two authenticated concurrent 60,000 VND repayments against a 100,000 VND voucher yielded exactly one accepted and one over-limit rejection; net remained 60,000 VND. Vitest 81/81, typecheck, lint, and production build passed. Independent review approved with no remaining blocker. Production database, push, and deploy untouched.",
+    "user_visible_behavior": "Admin có sổ ứng riêng, dòng hàng liên kết kho, hoàn tiền từng phần và nút ghi nhận chi phí đủ điều kiện.",
+    "verification_command": "Local Supabase role/RPC checks: owner-only tables, atomic stock link, raw materials excluded from profit, concurrent repayments never exceed advance.",
+    "notes": "Covers stories: ADV-01, ADV-02, ADV-03, ADV-04, ADV-05, ADV-07",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-03-private-evidence",
+    "title": "Private R2 evidence lifecycle",
+    "status": "passing",
+      "evidence": "Owner-only R2 lifecycle uses separate staging and sealed keys; conditional PUT prevents replay/concurrent overwrite. Verification: Vitest 94/94, clean isolated Supabase reset and pgTAP 28/28 evidence assertions (233 total), typecheck/lint/build pass, advisors clean, independent security review PASS. Production, push and deploy untouched.",
+    "user_visible_behavior": "Admin tải và xem nhiều ảnh hóa đơn riêng tư qua R2; nhân viên không thể mở metadata hoặc URL.",
+    "verification_command": "Route tests and owner/staff/anon API matrix: owner uploads/reads; staff/anon and cross-owner IDs are denied; expired uploads are cleaned safely.",
+    "notes": "Covers stories: ADV-01, ADV-07",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-04-owner-advance-workflows",
+    "title": "Owner purchase and reimbursement workflows",
+    "status": "passing",
+    "evidence": "Isolated local Docker pgTAP 43/43; Vitest 130/130; typecheck, focused ESLint, production build and diff check pass. Independent hard-mode review PASS. Reviewed daily expenses are visibly locked from edits/deletion; production, push and deploy untouched.",
+    "user_visible_behavior": "Admin lưu nháp rồi chốt phiếu mua, liên kết tồn kho một lần, ghi hoàn một phần và chọn khoản không phải nguyên liệu để tính lợi nhuận; nhân viên chỉ nhập chi phí từ tiền quán.",
+    "verification_command": "Owner workflow checks: mixed stock/service voucher creates one stock receipt; partial reimbursement balance is correct; duplicate daily-cost candidates require review; profit stays unchanged until explicit post.",
+    "notes": "Covers stories: ADV-01, ADV-02, ADV-03, ADV-04, ADV-05, ADV-07",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-05-profit-overview-navigation",
+    "title": "Profit, purchase-monitoring dashboard, and navigation",
+    "status": "passing",
+    "evidence": "Local verification only: isolated Supabase Docker test passed 10 pgTAP files/243 assertions; Vitest 28 files/135 tests; typecheck, focused ESLint, production build, and diff check passed. Independent reviews' future-purchase, historical-cutoff, and read-error overwrite findings were fixed and rechecked. Browser smoke confirmed grouped navigation and unavailable states. The configured preview uses hosted Supabase without these purchase migrations, so purchase queries remain unavailable there. No production migration, push, or deploy.",
+    "user_visible_behavior": "KPI mua hàng/ứng tiền chỉ hiện trong tính năng giám sát mua hàng; dashboard Tổng quan giữ doanh thu/lợi nhuận như cũ và lợi nhuận chỉ cộng khoản admin đã ghi nhận.",
+    "verification_command": "Compare main Overview revenue/profit and separate purchase-monitoring month metrics to hand-calculated values; staff receives no owner purchase data.",
+    "notes": "Covers stories: ADV-04, ADV-05, ADV-06, ADV-07",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-06-inventory-ux-and-lazy-history",
+    "title": "Inventory usability and lazy history",
+    "status": "passing",
+    "evidence": "Independent reviews found no P1/P2 blockers; Vitest 34 files/160 tests, isolated Docker pgTAP 11 files/259 assertions, typecheck, focused ESLint, production build and diff check passed. Inventory pages/history are tab-scoped and bounded; staff week limits remain. Browser data smoke is partial because localhost points to hosted Supabase without the Phase 06 migration; no production migration, push, or deploy.",
+    "user_visible_behavior": "Nhập kho thấy rõ phép quy đổi/cảnh báo bất thường; lịch sử chỉ tải khi admin mở.",
+    "verification_command": "Browser/query checks: catalog/receiving do not fetch full history; opening history fetches bounded pages; unit conversion and outlier prompt match source values.",
+    "notes": "Covers stories: INV-01, ADV-02",
     "priority": "P1"
   }
 ]

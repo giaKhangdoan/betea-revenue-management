@@ -6,6 +6,7 @@ import {
   deactivateInventoryItemAction,
   reactivateInventoryItemAction,
   updateInventoryItemAction,
+  verifyInventoryItemConversionAction,
   type InventoryCatalogActionState,
 } from "@/app/(private)/inventory/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
@@ -30,15 +31,25 @@ function unitSummary(item: InventoryCatalogItem) {
     : `1 ${item.large_unit} = ${Number(item.conversion_factor).toLocaleString("vi-VN")} ${item.small_unit}`;
 }
 
+function conversionStatus(item: InventoryCatalogItem) {
+  if (!item.large_unit || item.conversion_factor == null) return "Chưa có phép quy đổi";
+  return item.conversion_verified_at ? "Đơn vị đã xác minh" : "Đơn vị chưa xác minh";
+}
+
+function formatVerificationTime(value: string) {
+  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(value));
+}
+
 function CatalogItemRow({ item }: { item: InventoryCatalogItem }) {
   const [state, action, pending] = useActionState<InventoryCatalogActionState, FormData>(updateInventoryItemAction, undefined);
   const [deactivation, deactivate, deactivating] = useActionState<InventoryCatalogActionState, FormData>(deactivateInventoryItemAction, undefined);
   const [reactivation, reactivate, reactivating] = useActionState<InventoryCatalogActionState, FormData>(reactivateInventoryItemAction, undefined);
+  const [verification, verify, verifying] = useActionState<InventoryCatalogActionState, FormData>(verifyInventoryItemConversionAction, undefined);
 
   return <li>
     <details className="inventory-catalog-item">
       <summary>
-        <span><strong>{item.name}</strong><small>{item.category} · {unitSummary(item)}</small></span>
+        <span><strong>{item.name}</strong><small>{item.category} · {unitSummary(item)} · {conversionStatus(item)}</small></span>
         <span className="status status-neutral">{item.active ? "Đang dùng" : "Ngừng dùng"}</span>
       </summary>
       <div className="inventory-catalog-item-content">
@@ -48,6 +59,14 @@ function CatalogItemRow({ item }: { item: InventoryCatalogItem }) {
           <button className="button button-primary" type="submit" disabled={pending}>{pending ? "Đang lưu…" : "Lưu thay đổi"}</button>
           <ActionMessage error={state?.error} success={state?.success} />
         </form>
+        {item.large_unit && item.conversion_factor != null ? <form className="inventory-unit-verification" action={verify}>
+          <input type="hidden" name="item_id" value={item.id} />
+          <p className={item.conversion_verified_at ? "inventory-unit-verified" : "inventory-unit-unverified"}>
+            {item.conversion_verified_at ? `Đã xác minh ${formatVerificationTime(item.conversion_verified_at)}.` : "Hãy đối chiếu quy cách trên bao bì trước khi dùng hệ số này."}
+          </p>
+          {!item.conversion_verified_at ? <button className="button button-secondary" type="submit" disabled={verifying}>{verifying ? "Đang xác nhận…" : "Tôi đã kiểm tra quy đổi"}</button> : null}
+          <ActionMessage error={verification?.error} success={verification?.success} />
+        </form> : null}
         {item.active ? <form action={deactivate}>
           <input type="hidden" name="item_id" value={item.id} />
           <button className="button button-secondary" type="submit" disabled={deactivating}>{deactivating ? "Đang cập nhật…" : "Ngừng dùng mặt hàng"}</button>

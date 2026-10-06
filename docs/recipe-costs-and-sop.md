@@ -24,7 +24,7 @@ Projection cho nhân viên chỉ gồm tên món, size, nguyên liệu, định 
 
 - Owner pages/actions kiểm tra quyền ở server. Các bảng owner-only dùng grants và RLS; ẩn nút trên giao diện không thay cho kiểm soát database.
 - Staff page chỉ đọc bảng `staff_sop_publications`. Khi mở rộng schema hoặc thêm trường, cập nhật allowlist và boundary test trước.
-- Các migration hiện có trong repo gồm `20261005165742_recipe_costing.sql` và `20261006060737_sop_safe_revisions.sql`. Chỉ áp vào môi trường đã được chọn rõ; chưa có xác nhận áp migration này lên production hoặc deploy tính năng.
+- Các migration trong repo gồm `20261005165742_recipe_costing.sql`, `20261006060737_sop_safe_revisions.sql` và `20261006141400_bind_sop_publish_to_saved_sources.sql`. Migration mới dựng projection nhân viên từ recipe và SOP đã lưu, đồng thời từ chối payload publish khác nguồn đã khóa revision. Chỉ áp vào môi trường đã được chọn rõ; chưa có xác nhận áp migration này lên production hoặc deploy tính năng.
 - Đồng bộ Canva chưa được bật. Chỉ tiếp tục sau khi Phase 01 xác minh quyền/API trên bản sao, giữ nguyên design gốc và link nhân viên; quản lý sẽ tự bấm Publish theo quyết định đã chốt.
 
 ## Kiểm tra local
@@ -39,4 +39,4 @@ npm run build
 npx supabase test db --local
 ```
 
-Trạng thái xác minh tại 06/10/2026: 76 unit tests, 139 pgTAP assertions qua 7 SQL files; lint, typecheck và build thành công. Không chạy `supabase test db --local` khi CLI đang trỏ tới project production.
+Trạng thái xác minh tại 06/10/2026: 76 unit tests, 140 pgTAP assertions qua 7 SQL files; lint, typecheck và build thành công. Không chạy `supabase test db --local` khi CLI đang trỏ tới project production.

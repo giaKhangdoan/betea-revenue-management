@@ -4,6 +4,7 @@ import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { allocateMonthlyAmountByDay, allocateSignedMonthlyAmountByDay, calculateDailyRevenue, calculateMonthlyElectricity, calculateProfitVnd, hasMeterResetWithinMonth } from "@/lib/finance/calculations";
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
 import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
+import { loadOwnerPostedProfitCostsInDateRange } from "@/lib/owner-advances/overview";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +33,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const owner = await requireOwnerClient();
   if (!owner) redirect("/login");
 
-  const [daysResult, costResult, targetResult, expenseResult, adjustmentsResult] = await Promise.all([
+  const [daysResult, costResult, targetResult, expenseResult, adjustmentsResult, ownerPostedCostsResult] = await Promise.all([
     loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: effectiveStart, end: asOf }),
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("daily_expenses").select("amount_vnd").eq("owner_id", owner.ownerId).is("deleted_at", null).gte("business_date", effectiveStart).lte("business_date", asOf),
     owner.supabase.from("monthly_cost_adjustments").select("amount_delta_vnd").eq("owner_id", owner.ownerId).eq("month_start", start),
+    loadOwnerPostedProfitCostsInDateRange(owner.supabase, owner.ownerId, start, asOf),
   ]);
-  const records = daysResult.data as DayRow[];
+  const records = (daysResult.data ?? []) as DayRow[];
   const recordMap = new Map(records.map((record) => [record.business_date, record]));
   const expenses = expenseResult.data ?? [];
   const incidentalsVnd = expenses.reduce((sum, expense) => sum + Number(expense.amount_vnd), 0);
@@ -59,7 +61,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   });
   const knownRevenue = dailyRows.reduce((sum, row) => sum + (row.total ?? 0), 0);
   const incompleteDays = dailyRows.filter((row) => row.total === null).length;
-  const revenueComplete = dailyRows.length > 0 && incompleteDays === 0;
+  const revenueSourceError = Boolean(daysResult.error);
+  const revenueComplete = !revenueSourceError && dailyRows.length > 0 && incompleteDays === 0;
   const costs = costResult.data;
   const monthlyElectricity = calculateMonthlyElectricity({
     firstDayMorningKwh: recordMap.get(start)?.electricity_morning_kwh ?? null,
@@ -76,7 +79,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     costs && costs.cogs_vnd !== null && costs.wages_vnd !== null && costs.water_bill_vnd !== null && monthlyElectricity.expenseVnd !== null,
   );
   const monthKey = selectedMonth as `${number}-${number}`;
-  const preCogsExpensesVnd = costsComplete
+  const operatingCostsAvailable = !expenseResult.error && !adjustmentsResult.error;
+  const preCogsExpensesVnd = costsComplete && operatingCostsAvailable
     ? dailyRows.reduce((sum, row) => {
       const dayIndex = Number(row.date.slice(8, 10)) - 1;
       const allocatedBaseCosts = [
@@ -94,6 +98,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     revenueVnd: revenueComplete ? knownRevenue : null,
     expensesVnd: preCogsExpensesVnd,
     cogsVnd: costs?.cogs_vnd ?? null,
+    ownerPostedCostsVnd: ownerPostedCostsResult.error ? null : ownerPostedCostsResult.amountVnd,
   });
   const target = targetResult.data;
   const revenueTarget = target?.revenue_target_vnd ?? null;
@@ -121,8 +126,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="heading-actions"><form className="month-jump" action="/"><label htmlFor="dashboard-month">Chọn tháng</label><input id="dashboard-month" type="month" name="month" min="2026-09" defaultValue={selectedMonth} /><button className="button button-secondary" type="submit">Xem</button></form><Link className="button" href={`/ledger/${today}`}>Nhập hôm nay</Link></div>
       </div>
       <section className="metric-grid" aria-label="Chỉ số tháng">
-        <article className="metric-card surface"><div className="metric-label">Doanh thu đã nhập đủ ngày</div><strong className="metric-value">{formatVnd(knownRevenue)}</strong><p>{incompleteDays > 0 ? `Còn ${incompleteDays} ngày cần nhập hoặc chốt` : monthIsFinished ? "Đã đủ doanh thu các ngày trong tháng" : `Đã nhập đủ đến ${formatBusinessDate(asOf, { day: "numeric", month: "short" })}`}</p>{revenueTarget !== null ? <div className="target-progress"><div><span>{monthIsFinished ? "Mục tiêu doanh thu" : "Tiến độ mục tiêu tháng"}</span><strong>{formatVnd(revenueTarget)}</strong></div><div className="progress-track"><span style={{ width: `${Math.min(100, Math.max(0, revenuePercent ?? 0))}%` }} /></div><small>{revenuePercent === null ? incompleteDays > 0 ? "Nhập đủ ngày để xem tỷ lệ mục tiêu." : "Chưa có dữ liệu doanh thu." : `${revenuePercent.toFixed(0)}%${monthIsFinished ? " mục tiêu" : ` mục tiêu đến ${formatBusinessDate(asOf, { day: "numeric", month: "short" })}`}`}</small></div> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu tháng</Link>}</article>
-        <article className="metric-card surface"><div className="metric-label">{monthIsFinished ? "Lợi nhuận tháng sau COGS" : "Lợi nhuận tạm tính sau COGS"}</div><strong className="metric-value">{profit === null ? "Chưa đủ dữ liệu" : formatVnd(profit)}</strong><p>{profit === null ? monthlyElectricity.status === "meter_reset" && monthlyElectricity.expenseVnd === null ? "Công tơ có mức giảm/reset; hãy nhập bill điện để hoàn tất chi phí." : incompleteDays > 0 ? `Còn ${incompleteDays} ngày thiếu doanh thu.` : "Kiểm tra COGS, lương, nước và bill điện hoặc chỉ số công tơ." : monthIsFinished ? "Đã trừ COGS POS và các chi phí quản lý." : `Tạm tính đến ${formatBusinessDate(asOf, { day: "numeric", month: "long" })}; COGS theo số hiện đã nhập.`}</p>{profitVariance !== null ? <small className={`variance ${profitVariance >= 0 ? "variance-positive" : "variance-negative"}`}>{profitVariance >= 0 ? "+" : ""}{profitVariance.toFixed(1)}% so với mục tiêu lợi nhuận</small> : profitTarget !== null ? <small className="form-note">Mục tiêu lợi nhuận: {formatVnd(profitTarget)}{monthIsFinished ? " · chênh lệch hiện khi đủ dữ liệu." : " · đối chiếu sau khi chốt tháng."}</small> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu lợi nhuận</Link>}</article>
+        <article className="metric-card surface"><div className="metric-label">Doanh thu đã nhập đủ ngày</div><strong className="metric-value">{revenueSourceError ? "Không tải được dữ liệu" : formatVnd(knownRevenue)}</strong><p>{revenueSourceError ? "Lỗi tải sổ ngày. Hãy tải lại trang; chưa thể đối chiếu doanh thu." : incompleteDays > 0 ? `Còn ${incompleteDays} ngày cần nhập hoặc chốt` : monthIsFinished ? "Đã đủ doanh thu các ngày trong tháng" : `Đã nhập đủ đến ${formatBusinessDate(asOf, { day: "numeric", month: "short" })}`}</p>{revenueTarget !== null ? <div className="target-progress"><div><span>{monthIsFinished ? "Mục tiêu doanh thu" : "Tiến độ mục tiêu tháng"}</span><strong>{formatVnd(revenueTarget)}</strong></div><div className="progress-track"><span style={{ width: `${Math.min(100, Math.max(0, revenuePercent ?? 0))}%` }} /></div><small>{revenuePercent === null ? revenueSourceError ? "Không tải được sổ ngày để tính tỷ lệ mục tiêu." : incompleteDays > 0 ? "Nhập đủ ngày để xem tỷ lệ mục tiêu." : "Chưa có dữ liệu doanh thu." : `${revenuePercent.toFixed(0)}%${monthIsFinished ? " mục tiêu" : ` mục tiêu đến ${formatBusinessDate(asOf, { day: "numeric", month: "short" })}`}`}</small></div> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu tháng</Link>}</article>
+        <article className="metric-card surface"><div className="metric-label">{monthIsFinished ? "Lợi nhuận tháng sau COGS" : "Lợi nhuận tạm tính sau COGS"}</div><strong className="metric-value">{profit === null ? "Chưa đủ dữ liệu" : formatVnd(profit)}</strong><p>{profit === null ? revenueSourceError ? "Không tải được doanh thu trong sổ ngày; lợi nhuận tạm ẩn để tránh sai số." : ownerPostedCostsResult.error ? "Không tải được khoản admin đã ghi nhận vào chi phí; lợi nhuận tạm ẩn để tránh sai số." : expenseResult.error || adjustmentsResult.error ? "Không tải được một nguồn chi phí; tải lại trang để đối chiếu lợi nhuận." : monthlyElectricity.status === "meter_reset" && monthlyElectricity.expenseVnd === null ? "Công tơ có mức giảm/reset; hãy nhập bill điện để hoàn tất chi phí." : incompleteDays > 0 ? `Còn ${incompleteDays} ngày thiếu doanh thu.` : "Kiểm tra COGS, lương, nước và bill điện hoặc chỉ số công tơ." : monthIsFinished ? "Đã trừ COGS POS, chi phí quản lý và khoản mua admin đã ghi nhận." : `Tạm tính đến ${formatBusinessDate(asOf, { day: "numeric", month: "long" })}; đã tính chi phí quản lý và khoản mua admin đã ghi nhận.`}</p>{profitVariance !== null ? <small className={`variance ${profitVariance >= 0 ? "variance-positive" : "variance-negative"}`}>{profitVariance >= 0 ? "+" : ""}{profitVariance.toFixed(1)}% so với mục tiêu lợi nhuận</small> : profitTarget !== null ? <small className="form-note">Mục tiêu lợi nhuận: {formatVnd(profitTarget)}{monthIsFinished ? " · chênh lệch hiện khi đủ dữ liệu." : " · đối chiếu sau khi chốt tháng."}</small> : <Link className="text-link" href={`/costs?month=${selectedMonth}`}>Đặt mục tiêu lợi nhuận</Link>}</article>
       </section>
       <div className="dashboard-columns">
         <section className="surface week-summary-card">
