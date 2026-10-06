@@ -73,6 +73,14 @@ button { color: inherit; }
 .nav-link[aria-current="page"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
 .rail-bottom { margin-top: auto; border-top: 1px solid var(--line); padding: 16px 8px 0; }
 .account-email { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.account-settings-link { display: inline-block; margin: 0 0 8px; font-size: 12px; }
+.account-settings-card { display: grid; gap: 14px; max-width: 680px; padding: 22px; }
+.account-settings-card h2, .account-settings-card p { margin: 0; }
+.account-settings-card h2 { font-size: 17px; font-weight: 620; }
+.account-settings-card > p:not(.form-note) { color: var(--muted); font-size: 13px; }
+.account-settings-card > p strong { color: var(--ink); font-weight: 600; }
+.account-email-form { display: grid; max-width: 460px; gap: 13px; }
+.account-email-form .form-error, .account-email-form .form-success { margin: 0; }
 .main-column { min-width: 0; }
 .topbar { min-height: 70px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: var(--surface); padding: 0 34px; }
 .topbar-label { color: var(--muted); font-size: 13px; }

@@ -23,6 +23,7 @@ export default async function PrivateLayout({ children }: Readonly<{ children: R
         <PrivateNavigation />
         <div className="rail-bottom">
           <p className="account-email">{access.email ?? "Tài khoản chủ cửa hàng"}</p>
+          <Link className="text-link account-settings-link" href="/account">Tài khoản</Link>
           <form action={signOutAction}><button className="button button-plain" type="submit">Đăng xuất</button></form>
         </div>
       </aside>
