@@ -1,10 +1,9 @@
 import { InventoryWorkspace } from "@/components/inventory/inventory-workspace";
-import { InventoryCountCorrectionPanel } from "@/components/inventory/inventory-count-correction-panel";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { addDays, currentBusinessDate, weekStart } from "@/lib/finance/format";
 import { getActiveInventoryItems, getInventoryCatalog } from "@/lib/inventory/catalog";
-import { getInventoryCount, getInventoryItemsNeedingRecountForCount, isInventoryBusinessDate } from "@/lib/inventory/counts";
-import { getInventoryReceiptPage } from "@/lib/inventory/receipts";
+import { getLatestFinalizedInventoryCount } from "@/lib/inventory/counts";
+import { getInventoryReceiptPage, getLatestInventoryReceiptsForItems } from "@/lib/inventory/receipts";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +17,7 @@ export default async function OwnerInventoryPage({
 
   const params = await searchParams;
   const today = currentBusinessDate();
-  const requestedDate = typeof params.date === "string" ? params.date : "";
-  const date = isInventoryBusinessDate(requestedDate) && requestedDate <= today ? requestedDate : today;
+  const date = today;
   const tab: "stock" | "receiving" | "catalog" = params.tab === "receiving" ? "receiving" : params.tab === "catalog" ? "catalog" : "stock";
   const monday = weekStart(today);
   const common = {
@@ -57,18 +55,15 @@ export default async function OwnerInventoryPage({
       receivingError={Boolean(error) || receipts.error} canCreateReceipts />;
   }
 
-  const [{ data: items, error }, count] = await Promise.all([
+  const [{ data: items, error }, snapshot] = await Promise.all([
     getActiveInventoryItems(owner.supabase, owner.ownerId),
-    getInventoryCount(owner.supabase, owner.ownerId, date),
+    getLatestFinalizedInventoryCount(owner.supabase, owner.ownerId),
   ]);
-  const recount = count.count?.status === "draft"
-    ? await getInventoryItemsNeedingRecountForCount(owner.supabase, count.count.id)
-    : { itemIds: [] as string[], error: false };
+  const checkedItemIds = new Set(snapshot.data?.items.map((item) => item.item_id) ?? []);
+  const itemIdsNeedingLatestReceipt = (items ?? []).filter((item) => !checkedItemIds.has(item.id)).map((item) => item.id);
+  const latestReceipts = await getLatestInventoryReceiptsForItems(owner.supabase, owner.ownerId, itemIdsNeedingLatestReceipt);
 
-  return <>
-    <InventoryWorkspace {...common} items={items ?? []} catalogItems={[]} error={Boolean(error)}
-      count={count.count} countItems={count.items} countError={count.error || recount.error}
-      needsRecountItemIds={recount.itemIds} />
-    {count.count?.status === "finalized" ? <InventoryCountCorrectionPanel count={count.count} items={count.items} /> : null}
-  </>;
+  return <InventoryWorkspace {...common} items={items ?? []} catalogItems={[]} error={Boolean(error)}
+    latestStockSnapshot={snapshot.data} latestStockSnapshotError={snapshot.error}
+    latestStockReceipts={latestReceipts.data} latestStockReceiptsError={latestReceipts.error} />;
 }

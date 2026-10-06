@@ -67,6 +67,13 @@ export type InventoryReceiptPage = {
   nextCursor: { receivedAt: string; id: string } | null;
 };
 
+export type InventoryLatestItemReceipt = {
+  item_id: string;
+  receipt_code: string;
+  received_at: string;
+  lines: InventoryReceiptLine[];
+};
+
 export const INVENTORY_HISTORY_PAGE_SIZE = 20;
 const MAX_RECEIPT_LINES_PER_RECEIPT = 200;
 const MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT = 50;
@@ -398,6 +405,64 @@ export async function getInventoryReceiptPage(
     hasMore,
     nextCursor: hasMore ? { receivedAt: last.received_at, id: last.id } : null,
   };
+}
+
+/** Fetch the newest receipt for each requested inventory item without loading unrelated receipt history. */
+export async function getLatestInventoryReceiptsForItems(
+  supabase: ServerSupabaseClient,
+  ownerId: string,
+  itemIds: string[],
+): Promise<{ data: InventoryLatestItemReceipt[]; error: boolean }> {
+  const requestedIds = [...new Set(itemIds)];
+  if (requestedIds.length === 0) return { data: [], error: false };
+
+  const { data: rawLines, error: linesError } = await supabase.from("inventory_receipt_lines")
+    .select("id,receipt_id,item_id,item_name,category,large_unit,large_quantity,conversion_factor,small_unit,loose_quantity,converted_quantity")
+    .eq("owner_id", ownerId)
+    .in("item_id", requestedIds)
+    .order("receipt_id")
+    .order("line_number")
+    .limit(5001);
+  if (linesError || (rawLines?.length ?? 0) > 5000) return { data: [], error: true };
+
+  const lines = (rawLines ?? []) as InventoryReceiptLine[];
+  const receiptIds = [...new Set(lines.map(({ receipt_id }) => receipt_id))];
+  if (receiptIds.length === 0) return { data: [], error: false };
+
+  const headers: { id: string; receipt_code: string; received_at: string }[] = [];
+  for (let from = 0; from < receiptIds.length; from += 500) {
+    const { data, error } = await supabase.from("inventory_receipts")
+      .select("id,receipt_code,received_at")
+      .eq("owner_id", ownerId)
+      .in("id", receiptIds.slice(from, from + 500));
+    if (error) return { data: [], error: true };
+    headers.push(...(data ?? []));
+  }
+
+  const linesByReceipt = new Map<string, InventoryReceiptLine[]>();
+  for (const line of lines) {
+    const receiptLines = linesByReceipt.get(line.receipt_id) ?? [];
+    receiptLines.push(line);
+    linesByReceipt.set(line.receipt_id, receiptLines);
+  }
+
+  const latestByItem = new Map<string, InventoryLatestItemReceipt>();
+  headers.sort((a, b) => b.received_at.localeCompare(a.received_at) || b.id.localeCompare(a.id));
+  for (const header of headers) {
+    const receiptLines = linesByReceipt.get(header.id) ?? [];
+    const itemIdsInReceipt = new Set(receiptLines.map(({ item_id }) => item_id));
+    for (const itemId of itemIdsInReceipt) {
+      if (latestByItem.has(itemId)) continue;
+      latestByItem.set(itemId, {
+        item_id: itemId,
+        receipt_code: header.receipt_code,
+        received_at: header.received_at,
+        lines: receiptLines.filter((line) => line.item_id === itemId),
+      });
+    }
+  }
+
+  return { data: [...latestByItem.values()], error: false };
 }
 
 export const MAX_INVENTORY_EXPORT_RECEIPTS = 5_000;

@@ -53,6 +53,12 @@ export type InventoryFinalizedCount = Pick<InventoryCount, "id" | "business_date
   history_truncated?: boolean;
 };
 
+export type InventoryStockSnapshot = Pick<InventoryCount, "id" | "business_date"> & {
+  finalized_at: string;
+  items: InventoryCountItem[];
+  history_integrity?: InventoryHistoryIntegrity;
+};
+
 export type InventoryFinalizedCountPage = {
   data: InventoryFinalizedCount[];
   error: boolean;
@@ -671,6 +677,59 @@ export function isInventoryBusinessDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
     && Number.isFinite(parsed.getTime())
     && parsed.toISOString().slice(0, 10) === value;
+}
+
+/** Fetch only the latest completed stock count for the admin's current-stock view. */
+export async function getLatestFinalizedInventoryCount(supabase: ServerSupabaseClient, ownerId: string) {
+  const { data: count, error: countError } = await supabase
+    .from("inventory_counts")
+    .select("id,business_date,finalized_at")
+    .eq("owner_id", ownerId)
+    .eq("status", "finalized")
+    .not("finalized_at", "is", null)
+    .order("finalized_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (countError) return { data: null as InventoryStockSnapshot | null, error: true };
+  if (!count?.finalized_at) return { data: null as InventoryStockSnapshot | null, error: false };
+
+  const [itemsResult, integrityResult] = await Promise.all([
+    supabase.from("inventory_count_items")
+      .select("item_id,item_name,category,large_unit,conversion_factor,small_unit,count_large_unit_only,large_quantity,small_quantity,counted_quantity,counted_at,sort_order")
+      .eq("owner_id", ownerId)
+      .eq("count_id", count.id)
+      .order("sort_order")
+      .order("category")
+      .order("item_name")
+      .limit(501),
+    supabase.from("inventory_history_backfill_status")
+      .select("status,reason")
+      .eq("owner_id", ownerId)
+      .eq("entity_type", "count")
+      .eq("entity_id", count.id)
+      .maybeSingle(),
+  ]);
+
+  if (itemsResult.error || integrityResult.error || (itemsResult.data?.length ?? 0) > 500) {
+    return { data: null as InventoryStockSnapshot | null, error: true };
+  }
+
+  return {
+    data: {
+      ...count,
+      finalized_at: count.finalized_at,
+      items: itemsResult.data ?? [],
+      ...(integrityResult.data ? {
+        history_integrity: {
+          status: integrityResult.data.status === "verified" ? "verified" as const : "unverified" as const,
+          reason: integrityResult.data.reason,
+        },
+      } : {}),
+    } satisfies InventoryStockSnapshot,
+    error: false,
+  };
 }
 
 export async function getInventoryCount(supabase: ServerSupabaseClient, ownerId: string, date: string) {
