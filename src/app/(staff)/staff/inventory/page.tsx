@@ -61,11 +61,17 @@ export default async function StaffInventoryPage({
       receiptNextCursor={receipts.nextCursor} receivingError={Boolean(itemsResult.error) || receipts.error} />;
   }
 
-  const count = await getInventoryCount(staff.supabase, staff.ownerId, date);
+  let count = await getInventoryCount(staff.supabase, staff.ownerId, date);
+  let countSyncError = false;
+  if (date === today && count.count?.status === "draft") {
+    const { error: syncError } = await staff.supabase.rpc("open_inventory_count", { p_business_date: date });
+    if (!syncError) count = await getInventoryCount(staff.supabase, staff.ownerId, date);
+    else countSyncError = true;
+  }
   const recount = count.count?.status === "draft"
     ? await getInventoryItemsNeedingRecountForCount(staff.supabase, count.count.id)
     : { itemIds: [] as string[], error: false };
 
   return <InventoryWorkspace {...common} count={count.count} countItems={count.items}
-    countError={count.error || recount.error} needsRecountItemIds={recount.itemIds} />;
+    countError={count.error || recount.error || countSyncError} needsRecountItemIds={recount.itemIds} />;
 }
