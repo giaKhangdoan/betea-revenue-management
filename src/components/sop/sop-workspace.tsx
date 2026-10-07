@@ -110,7 +110,7 @@ export function SopWorkspace({
       </div>
     </section>
 
-    {recipe.products.length === 0 ? <section className="surface sop-empty"><h2>Chưa có món trong công thức</h2><p>Hãy thêm món và size ở khu vực giá vốn trước. SOP sẽ lấy định lượng từ đó để tránh lệch công thức.</p><Link className="button button-secondary" href="/product-costs">Mở giá vốn món</Link></section> : <>
+    {recipe.products.length === 0 ? <section className="surface sop-empty"><h2>Chưa có món trong công thức</h2><p>Hãy thêm món và size ở khu vực giá vốn trước. SOP sẽ lấy định lượng từ đó để tránh lệch công thức.</p><Link className="button button-secondary" href="/product-costs">Mở giá vốn món</Link></section> : <div className="sop-work-area">
       <section className="surface sop-editor-panel">
         <div className="section-heading"><div><h2>Chọn món và size</h2><p>Chỉ thêm những size đã có công thức. Mỗi bước sẽ hiện đúng thứ tự cho nhân viên.</p></div></div>
         <div className="sop-select-grid">
@@ -141,6 +141,7 @@ export function SopWorkspace({
         </div> : <div className="sop-add-size-prompt"><strong>Size {selectedSize} chưa có trong SOP</strong><p>Thêm size để bắt đầu viết hướng dẫn. Định lượng tham chiếu đã lấy từ công thức gốc.</p><button className="button" type="button" onClick={() => selectOrAddSize(selectedSize)}>Thêm size vào SOP</button></div>}
       </section>
 
+      <div className="sop-support-column">
       <section className="surface sop-preview-card" aria-label="Xem trước SOP nhân viên">
         <div className="section-heading"><div><p className="eyebrow">XEM TRƯỚC PHÍA NHÂN VIÊN</p><h2>{selectedProduct?.name ?? "Món"} · Size {selectedSize}</h2><p>Nhân viên chỉ thấy tên nguyên liệu, định lượng, bước pha và ghi chú.</p></div><span className="status status-neutral">Bản xem trước</span></div>
         {recipeVariant?.components.length ? <div className="sop-preview-components"><strong>Định lượng</strong><ul>{recipeVariant.components.map((component, index) => {
@@ -165,6 +166,7 @@ export function SopWorkspace({
         </div>
         <ActionMessage error={publishState?.error} success={publishState?.success} />
       </section>
-    </>}
+      </div>
+    </div>}
   </div>;
 }

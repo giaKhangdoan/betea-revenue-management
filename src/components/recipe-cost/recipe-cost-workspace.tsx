@@ -103,10 +103,11 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
   const [state, saveAction, pending] = useActionState(saveRecipeCostWorkspace, undefined);
   const revision = state?.revision ?? initialRevision;
   const [tab, setTab] = useState<Tab>("ingredients");
-  const [selectedIngredientId, setSelectedIngredientId] = useState("");
-  const [selectedBatchId, setSelectedBatchId] = useState("");
-  const [batchDraft, setBatchDraft] = useState<RecipeBatch | null>(null);
-  const [productDraft, setProductDraft] = useState<RecipeProduct | null>(null);
+  const [selectedIngredientId, setSelectedIngredientId] = useState(initialDocument?.ingredients[0]?.id ?? "");
+  const [selectedBatchId, setSelectedBatchId] = useState(initialDocument?.batches[0]?.id ?? "");
+  const [batchDraft, setBatchDraft] = useState<RecipeBatch | null>(() => initialDocument?.batches[0] ? structuredClone(initialDocument.batches[0]) : null);
+  const [productDraft, setProductDraft] = useState<RecipeProduct | null>(() => initialDocument?.products[0] ? structuredClone(initialDocument.products[0]) : null);
+  const [productSearch, setProductSearch] = useState("");
   const [draftDirty, setDraftDirty] = useState(false);
   const [reason, setReason] = useState("Cập nhật nguyên liệu và công thức");
 
@@ -137,7 +138,7 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
       || document.products.some((product) => product.variants.some((variant) => variant.components.some((component) => component.kind === "ingredient" && component.ingredientId === ingredient.id)));
     if (referenced) return;
     changeDocument((current) => ({ ...current, ingredients: current.ingredients.filter((item) => item.id !== ingredient.id) }));
-    setSelectedIngredientId("");
+    setSelectedIngredientId(document.ingredients.find((item) => item.id !== ingredient.id)?.id ?? "");
   }
   function openBatch(batch: RecipeBatch) {
     if (draftDirty && !window.confirm("Bạn có thay đổi công thức chưa áp dụng. Bỏ thay đổi đó để mở mẻ khác?")) return;
@@ -186,12 +187,14 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
       || document.products.some((product) => product.variants.some((variant) => variant.components.some((component) => component.kind === "batch" && component.batchId === batchDraft.id)));
     if (referenced) return;
     changeDocument((current) => ({ ...current, batches: current.batches.filter((batch) => batch.id !== batchDraft.id) }));
-    setBatchDraft(null); setSelectedBatchId(""); setDraftDirty(false);
+    const nextBatch = document.batches.find((item) => item.id !== batchDraft.id) ?? null;
+    setBatchDraft(nextBatch ? structuredClone(nextBatch) : null); setSelectedBatchId(nextBatch?.id ?? ""); setDraftDirty(false);
   }
   function deleteProduct() {
     if (!productDraft) return;
     changeDocument((current) => ({ ...current, products: current.products.filter((product) => product.id !== productDraft.id) }));
-    setProductDraft(null); setDraftDirty(false);
+    const nextProduct = document.products.find((product) => product.id !== productDraft.id) ?? null;
+    setProductDraft(nextProduct ? structuredClone(nextProduct) : null); setDraftDirty(false);
   }
   function addVariant(size: RecipeSize) {
     if (!productDraft || productDraft.variants.some((variant) => variant.size === size)) return;
@@ -254,12 +257,16 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
     </section>
 
     <section id="recipe-panel-products" role="tabpanel" aria-labelledby="recipe-tab-products" className="surface recipe-cost-panel" hidden={tab !== "products"}>
-      <div className="section-heading"><div><h2>Công thức món theo size</h2><p>Mapping size theo xác nhận: S = 12oz, M = 17oz, L = 22oz. Giá bán nhập riêng theo từng size.</p></div><button className="button" type="button" onClick={createProduct}>Thêm món</button></div>
-      {document.products.length ? <div className="recipe-product-cost-grid">{document.products.map((product) => <article className="recipe-product-card" key={product.id}><h3>{product.name || "Món chưa đặt tên"}</h3><div>{sizes.map((size) => {
-        const variant = products[product.id]?.variants[size];
-        return <div className="recipe-size-summary" key={size}><span>{size} · {size === "S" ? 12 : size === "M" ? 17 : 22}oz</span><strong>{variant ? money(variant.totalCostVnd) : "Chưa có công thức"}</strong><small>{variant && variant.salePriceVnd !== null ? `Giá bán ${money(variant.salePriceVnd)} · Lãi gộp ${money(variant.grossProfitVnd)} · Biên ${percent(variant.grossMarginPercent)}` : "Chưa nhập giá bán"}</small></div>;
-      })}</div><button type="button" className="text-button" onClick={() => openProduct(product)}>Mở và sửa món</button></article>)}</div> : <div className="recipe-empty"><strong>Chưa có món trong menu</strong><p>Thêm công thức, chọn thành phần và giá bán theo từng size.</p></div>}
+      <div className="section-heading"><div><h2>Công thức món theo size</h2><p>Chọn món để xem hoặc sửa công thức. Size S = 12oz, M = 17oz, L = 22oz.</p></div><button className="button" type="button" onClick={createProduct}>Thêm món</button></div>
       <div className="recipe-two-column recipe-product-editor">
+        <div className="recipe-item-list recipe-product-list" aria-label="Danh sách món">
+          <label className="field recipe-product-search"><span>Tìm món</span><input type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Nhập tên món…" /></label>
+          {document.products.filter((product) => product.name.toLocaleLowerCase("vi").includes(productSearch.trim().toLocaleLowerCase("vi"))).map((product) => <button key={product.id} type="button" aria-pressed={product.id === productDraft?.id} className={product.id === productDraft?.id ? "recipe-item-button recipe-item-button-selected" : "recipe-item-button"} onClick={() => openProduct(product)}>
+            <span><strong>{product.name || "Món chưa đặt tên"}</strong><small>{product.variants.length ? product.variants.map((variant) => `${variant.size}: ${products[product.id]?.variants[variant.size] ? money(products[product.id]!.variants[variant.size]!.totalCostVnd) : "chưa tính cost"}`).join(" · ") : "Chưa thêm size"}</small></span><b>{product.variants.length} size</b>
+          </button>)}
+          {!document.products.length ? <p className="form-note">Chưa có món trong menu. Tạo món mới để bắt đầu.</p> : null}
+          {document.products.length > 0 && !document.products.some((product) => product.name.toLocaleLowerCase("vi").includes(productSearch.trim().toLocaleLowerCase("vi"))) ? <p className="form-note">Không tìm thấy món phù hợp.</p> : null}
+        </div>
         {productDraft ? <div className="recipe-edit-form"><div className="section-heading"><div><h3>{document.products.some((item) => item.id === productDraft.id) ? "Sửa món" : "Món mới"}</h3><p>Cost mỗi size được tính từ các thành phần bên dưới.</p></div>{draftDirty ? <button type="button" className="text-button" onClick={() => { const saved = document.products.find((item) => item.id === productDraft.id); setProductDraft(saved ? structuredClone(saved) : null); setDraftDirty(false); }}>Bỏ thay đổi</button> : null}</div>
           <label className="field"><span>Tên món</span><input value={productDraft.name} onChange={(event) => updateProductDraft((product) => ({ ...product, name: event.target.value }))} /></label>
           <div className="recipe-size-add">{sizes.map((size) => <button type="button" key={size} className="button button-secondary" disabled={productDraft.variants.some((variant) => variant.size === size)} onClick={() => addVariant(size)}>Thêm size {size} · {size === "S" ? 12 : size === "M" ? 17 : 22}oz</button>)}</div>

@@ -779,15 +779,14 @@ button { color: inherit; }
 .recipe-component-row .field > span { color: var(--muted); font-size: 10px; }
 .recipe-component-row .field input, .recipe-component-row .field select { min-height: 38px; padding: 6px 8px; font-size: 12px; }
 .recipe-remove-line { min-height: 38px; flex: 0 0 auto; padding: 0 9px; font-size: 11px; white-space: nowrap; }
-.recipe-product-cost-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
-.recipe-product-card { display: grid; gap: 9px; border: 1px solid var(--line); padding: 14px; }
-.recipe-product-card h3 { margin: 0; font-size: 14px; font-weight: 620; }
-.recipe-size-summary { display: grid; grid-template-columns: 58px 1fr; align-items: baseline; gap: 3px 10px; border-top: 1px solid var(--line); padding: 8px 0; }
-.recipe-size-summary > span { color: var(--muted); font-size: 11px; }
-.recipe-size-summary > strong { font-size: 12px; font-weight: 620; text-align: right; }
-.recipe-size-summary > small { grid-column: 2; color: var(--muted); font-size: 10px; text-align: right; }
-.recipe-product-editor { grid-template-columns: minmax(0, 1fr); margin-top: 16px; }
+.recipe-product-editor { margin-top: 16px; }
 .recipe-product-editor > .recipe-edit-form { width: 100%; }
+.recipe-product-list { max-height: min(620px, calc(100vh - 255px)); align-content: start; }
+.recipe-product-search { position: sticky; top: 0; z-index: 1; gap: 5px; border-bottom: 1px solid var(--line); padding: 10px; background: white; }
+.recipe-product-search > span { color: var(--muted); font-size: 11px; }
+.recipe-product-search input { min-height: 38px; padding: 7px 9px; font-size: 12px; }
+.recipe-product-list .recipe-item-button-selected { box-shadow: inset 3px 0 var(--accent); }
+.recipe-product-list > .form-note { margin: 0; padding: 12px; }
 .recipe-edit-form > .section-heading > div { min-width: 0; }
 .recipe-edit-form > .section-heading > button { flex: 0 0 auto; white-space: nowrap; }
 .recipe-size-add { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -862,9 +861,14 @@ button { color: inherit; }
   .recipe-cost-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .recipe-history-columns { grid-template-columns: 1fr 1fr; }
 }
+@media (max-width: 900px) {
+  .recipe-product-editor { grid-template-columns: 1fr; }
+  .recipe-product-list { max-height: 310px; }
+}
 @media (max-width: 700px) {
   .recipe-two-column { grid-template-columns: 1fr; }
   .recipe-item-list { max-height: 250px; }
+  .recipe-product-list { max-height: 280px; }
   .recipe-conversion-card .section-heading { flex-direction: column; }
   .recipe-conversion-add { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .recipe-conversion-add > .button { grid-column: 1 / -1; }
@@ -883,18 +887,19 @@ button { color: inherit; }
   .recipe-overview-metric, .recipe-history-link { padding: 12px; }
   .recipe-overview-metric > strong { font-size: 20px; }
   .recipe-cost-panel, .recipe-save-panel { padding: 15px; }
-  .recipe-field-grid, .recipe-product-cost-grid { grid-template-columns: 1fr; }
+  .recipe-field-grid { grid-template-columns: 1fr; }
   .recipe-component-row { grid-template-columns: 1fr 1fr; }
   .recipe-component-row > .field:first-child { grid-column: 1 / -1; }
   .recipe-remove-line { justify-self: start; }
   .recipe-import-stats { grid-template-columns: 1fr; }
   .recipe-import-confirm { align-items: stretch; flex-direction: column; }
   .recipe-import-confirm > .button { width: 100%; }
-  .recipe-size-summary { grid-template-columns: 48px 1fr; }
 }
 
 /* Owner SOP editor and the staff-safe published instructions. */
 .sop-workspace { display: grid; gap: 14px; }
+.sop-work-area { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, .8fr); align-items: start; gap: 14px; }
+.sop-support-column { display: grid; align-content: start; gap: 14px; min-width: 0; }
 .sop-status-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; padding: 18px 20px; }
 .sop-status-card h2, .sop-editor-panel h2, .sop-save-panel h2, .staff-sop-empty h1 { margin: 0; font-size: 17px; font-weight: 640; }
 .sop-status-card p:not(.eyebrow), .sop-editor-panel .section-heading p, .sop-save-panel .section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
@@ -963,6 +968,7 @@ button { color: inherit; }
 .staff-sop-steps li p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
 .staff-sop-notes { margin: 0; border-left: 3px solid #d9e2dc; background: #f8faf8; padding: 9px 11px; color: var(--muted); font-size: 12px; }
 @media (max-width: 700px) {
+  .sop-work-area { grid-template-columns: 1fr; }
   .sop-status-card { flex-direction: column; }
   .sop-status-tags { justify-items: start; }
   .sop-select-grid { grid-template-columns: 1fr; }
