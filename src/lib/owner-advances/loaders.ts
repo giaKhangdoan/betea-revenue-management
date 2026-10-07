@@ -6,19 +6,19 @@ import type { DailyExpenseCandidateRow, InventoryItemChoice, OwnerPurchaseEviden
 type OwnerSupabase = NonNullable<Awaited<ReturnType<typeof createClient>>>;
 const PAGE_SIZE = 20;
 
-export async function loadOwnerPurchaseMonthPage(
+async function loadOwnerPurchasePage(
   supabase: OwnerSupabase,
   ownerId: string,
-  month: string,
   page: number,
+  bounds: { startDate: string; endDateExclusive: string } | null,
 ) {
-  const bounds = getVoucherMonthBounds(month);
   const range = getVoucherPageRange(page, PAGE_SIZE);
-  const { data, error, count } = await supabase.from("owner_purchase_vouchers")
+  let query = supabase.from("owner_purchase_vouchers")
     .select("id,owner_id,purchase_date,vendor,invoice_total_vnd,note,status,created_by,created_at,updated_by,updated_at,finalized_by,finalized_at,canceled_by,canceled_at,cancel_reason,linked_inventory_receipt_id,inventory_receipt_created", { count: "exact" })
     .eq("owner_id", ownerId)
-    .gte("purchase_date", bounds.startDate)
-    .lt("purchase_date", bounds.endDateExclusive)
+    .gte("purchase_date", bounds?.startDate ?? "2026-09-01");
+  if (bounds) query = query.lt("purchase_date", bounds.endDateExclusive);
+  const { data, error, count } = await query
     .order("purchase_date", { ascending: false })
     .order("created_at", { ascending: false })
     .range(range.from, range.to);
@@ -43,6 +43,23 @@ export async function loadOwnerPurchaseMonthPage(
     pageSize: PAGE_SIZE,
     error: false,
   };
+}
+
+export async function loadOwnerPurchaseMonthPage(
+  supabase: OwnerSupabase,
+  ownerId: string,
+  month: string,
+  page: number,
+) {
+  return loadOwnerPurchasePage(supabase, ownerId, page, getVoucherMonthBounds(month));
+}
+
+export async function loadOwnerPurchaseAllPage(
+  supabase: OwnerSupabase,
+  ownerId: string,
+  page: number,
+) {
+  return loadOwnerPurchasePage(supabase, ownerId, page, null);
 }
 
 export async function loadOwnerPurchaseVoucher(supabase: OwnerSupabase, ownerId: string, voucherId: string) {

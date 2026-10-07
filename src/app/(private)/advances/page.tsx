@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { PurchaseVoucherForm } from "@/components/owner-advances/purchase-voucher-form";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { currentBusinessDate, formatBusinessDate, formatVnd } from "@/lib/finance/format";
-import { loadActiveInventoryChoices, loadOwnerPurchaseMonthPage } from "@/lib/owner-advances/loaders";
+import { loadActiveInventoryChoices, loadOwnerPurchaseAllPage, loadOwnerPurchaseMonthPage } from "@/lib/owner-advances/loaders";
 import { loadOwnerPurchaseOverview } from "@/lib/owner-advances/overview";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ function monthLabel(month: string) {
 export default async function OwnerAdvancesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; page?: string }>;
+  searchParams: Promise<{ month?: string; page?: string; view?: string }>;
 }) {
   const owner = await requireOwnerClient();
   if (!owner) redirect("/login");
@@ -33,8 +33,11 @@ export default async function OwnerAdvancesPage({
   const currentMonth = currentBusinessDate().slice(0, 7);
   const month = selectedMonth(params.month, currentMonth);
   const page = selectedPage(params.page);
+  const viewAll = params.view === "all";
   const [vouchersResult, overview, inventoryChoices] = await Promise.all([
-    loadOwnerPurchaseMonthPage(owner.supabase, owner.ownerId, month, page),
+    viewAll
+      ? loadOwnerPurchaseAllPage(owner.supabase, owner.ownerId, page)
+      : loadOwnerPurchaseMonthPage(owner.supabase, owner.ownerId, month, page),
     loadOwnerPurchaseOverview(owner.supabase, owner.ownerId, month),
     loadActiveInventoryChoices(owner.supabase, owner.ownerId),
   ]);
@@ -78,7 +81,7 @@ export default async function OwnerAdvancesPage({
     </details>}
 
     <section className="surface owner-purchase-list-card">
-      <div className="section-heading"><div><h2>Phiếu mua {monthLabel(month)}</h2><p>{vouchersResult.error ? "Chưa tải được số lượng phiếu; danh sách hiện chưa thể đối chiếu." : `${vouchersResult.count} phiếu gồm bản nháp, đã chốt và đã hủy. Danh sách hiển thị từng trang.`}</p></div>{!vouchersResult.error ? <span className="status status-neutral">Trang {Math.min(page, pageCount)} / {pageCount}</span> : null}</div>
+      <div className="section-heading owner-purchase-list-heading"><div><h2>{viewAll ? "Tất cả khoản chi" : `Phiếu mua ${monthLabel(month)}`}</h2><p>{vouchersResult.error ? "Chưa tải được số lượng phiếu; danh sách hiện chưa thể đối chiếu." : viewAll ? `${vouchersResult.count} phiếu mua từ 01/09/2026 đến nay, gồm bản nháp, đã chốt và đã hủy.` : `${vouchersResult.count} phiếu gồm bản nháp, đã chốt và đã hủy trong tháng. Danh sách hiển thị từng trang.`}</p></div><div className="owner-purchase-list-actions">{!vouchersResult.error ? <span className="status status-neutral">Trang {Math.min(page, pageCount)} / {pageCount}</span> : null}<Link className="button button-secondary" href={viewAll ? `/advances?month=${month}` : `/advances?month=${month}&view=all`}>{viewAll ? "Theo tháng" : "Xem tất cả khoản chi"}</Link></div></div>
       {vouchersResult.error ? <p className="form-error" role="alert">Chưa tải được phiếu. Hãy tải lại trang trước khi tạo phiếu để tránh nhập trùng.</p> : pageRows.length ? <div className="owner-purchase-list-table-wrap"><table className="owner-purchase-list-table"><thead><tr><th>Ngày mua</th><th>Nơi mua và mặt hàng</th><th>Trạng thái</th><th className="owner-purchase-number-cell">Tổng hóa đơn</th><th></th></tr></thead><tbody>
         {pageRows.map((voucher) => <tr key={voucher.id}>
           <td>{formatBusinessDate(voucher.purchase_date, { day: "numeric", month: "short", year: "numeric" })}</td>
@@ -87,11 +90,11 @@ export default async function OwnerAdvancesPage({
           <td className="owner-purchase-number-cell"><strong>{formatVnd(Number(voucher.invoice_total_vnd))}</strong></td>
           <td><Link className="text-link" href={`/advances/${voucher.id}`}>Mở phiếu</Link></td>
         </tr>)}
-      </tbody></table></div> : <div className="empty-state owner-purchase-empty"><div><h2>Chưa có phiếu mua trong {monthLabel(month)}</h2><p>Tạo một bản nháp để bắt đầu theo dõi tiền bạn ứng và lưu chứng từ.</p></div></div>}
+      </tbody></table></div> : <div className="empty-state owner-purchase-empty"><div><h2>{viewAll ? "Chưa có khoản chi nào" : `Chưa có phiếu mua trong ${monthLabel(month)}`}</h2><p>Tạo một bản nháp để bắt đầu theo dõi tiền bạn ứng và lưu chứng từ.</p></div></div>}
       {pageCount > 1 ? <nav className="owner-purchase-pagination" aria-label="Trang phiếu mua">
-        {page > 1 ? <Link className="button button-secondary" href={`/advances?month=${month}&page=${page - 1}`}>Trang trước</Link> : <span />}
+        {page > 1 ? <Link className="button button-secondary" href={`/advances?month=${month}${viewAll ? "&view=all" : ""}&page=${page - 1}`}>Trang trước</Link> : <span />}
         <span>Trang {Math.min(page, pageCount)} / {pageCount}</span>
-        {page < pageCount ? <Link className="button button-secondary" href={`/advances?month=${month}&page=${page + 1}`}>Trang sau</Link> : <span />}
+        {page < pageCount ? <Link className="button button-secondary" href={`/advances?month=${month}${viewAll ? "&view=all" : ""}&page=${page + 1}`}>Trang sau</Link> : <span />}
       </nav> : null}
     </section>
 
