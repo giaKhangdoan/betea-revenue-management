@@ -517,6 +517,7 @@ button { color: inherit; }
 .login-config { border: 1px solid #ead8b4; border-radius: 8px; background: #fbf6eb; padding: 12px 14px; color: #76520d; font-size: 13px; line-height: 1.5; }
 
 @media (max-width: 980px) {
+  .page-heading { align-items: flex-start; flex-direction: column; }
   .app-shell { grid-template-columns: 1fr; }
   .side-rail { position: sticky; z-index: 5; top: 0; flex-direction: row; align-items: center; gap: 14px; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 16px; }
   .brand { flex: 0 0 auto; padding: 0 4px; }
@@ -858,7 +859,7 @@ button { color: inherit; }
 .recipe-cost-error p { margin: 0; color: var(--muted); font-size: 13px; }
 
 @media (max-width: 980px) {
-  .recipe-cost-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recipe-cost-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .recipe-history-columns { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 700px) {
@@ -878,6 +879,7 @@ button { color: inherit; }
 }
 @media (max-width: 560px) {
   .recipe-cost-overview { grid-template-columns: 1fr 1fr; }
+  .recipe-overview-metric:last-child { grid-column: 1 / -1; }
   .recipe-overview-metric, .recipe-history-link { padding: 12px; }
   .recipe-overview-metric > strong { font-size: 20px; }
   .recipe-cost-panel, .recipe-save-panel { padding: 15px; }
