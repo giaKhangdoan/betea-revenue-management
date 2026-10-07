@@ -24,18 +24,23 @@ export function TargetForms({ month, weekDate, weekStart, monthTarget, weekTarge
         <ActionMessage error={monthState?.error} success={monthState?.success} />
         <div className="form-actions"><button className="button button-secondary" type="submit" disabled={monthPending}>{monthPending ? "Đang lưu…" : "Lưu mục tiêu tháng"}</button></div>
       </form>
-      <form method="get" action="/costs" className="week-target-selector">
-        <input type="hidden" name="month" value={month} />
-        <label className="field"><span>Chọn một ngày trong tuần</span><input type="date" name="week" min="2026-09-01" defaultValue={weekDate} /></label>
-        <button className="button button-secondary" type="submit">Xem mục tiêu tuần</button>
-      </form>
-      <form action={weekAction} className="surface target-form">
-        <input type="hidden" name="week_start" value={weekStart} />
-        <div className="section-heading"><div><h2>Mục tiêu doanh thu tuần</h2><p>Tuần {formatBusinessDate(weekStart, { day: "numeric", month: "short" })}–{formatBusinessDate(addDays(weekStart, 6), { day: "numeric", month: "short" })} · tính từ Thứ 2 đến Chủ nhật.</p></div></div>
-        <label className="field"><span>Mục tiêu tuần từ {weekStart}</span><span className="input-suffix"><input name="revenue_target_vnd" type="text" inputMode="numeric" placeholder="Chưa đặt" defaultValue={displayVndInput(weekTarget?.revenue_target_vnd)} /><span>đ</span></span></label>
-        <ActionMessage error={weekState?.error} success={weekState?.success} />
-        <div className="form-actions"><button className="button button-secondary" type="submit" disabled={weekPending}>{weekPending ? "Đang lưu…" : "Lưu mục tiêu tuần"}</button></div>
-      </form>
+      <details className="surface compact-disclosure weekly-target-disclosure">
+        <summary><strong>Mục tiêu doanh thu tuần</strong><span>{formatBusinessDate(weekStart, { day: "numeric", month: "short" })}–{formatBusinessDate(addDays(weekStart, 6), { day: "numeric", month: "short" })} · {weekTarget?.revenue_target_vnd == null ? "Chưa đặt" : displayVndInput(weekTarget.revenue_target_vnd)}</span></summary>
+        <div className="compact-disclosure-content">
+          <form method="get" action="/costs" className="week-target-selector">
+            <input type="hidden" name="month" value={month} />
+            <label className="field"><span>Chọn một ngày trong tuần</span><input type="date" name="week" min="2026-09-01" defaultValue={weekDate} /></label>
+            <button className="button button-secondary" type="submit">Xem tuần</button>
+          </form>
+          <form action={weekAction} className="surface target-form">
+            <input type="hidden" name="week_start" value={weekStart} />
+            <div className="section-heading"><div><h2>Mục tiêu tuần</h2><p>Tính từ Thứ 2 đến Chủ nhật.</p></div></div>
+            <label className="field"><span>Mục tiêu tuần</span><span className="input-suffix"><input name="revenue_target_vnd" type="text" inputMode="numeric" placeholder="Chưa đặt" defaultValue={displayVndInput(weekTarget?.revenue_target_vnd)} /><span>đ</span></span></label>
+            <ActionMessage error={weekState?.error} success={weekState?.success} />
+            <div className="form-actions"><button className="button button-secondary" type="submit" disabled={weekPending}>{weekPending ? "Đang lưu…" : "Lưu mục tiêu tuần"}</button></div>
+          </form>
+        </div>
+      </details>
     </section>
   );
 }

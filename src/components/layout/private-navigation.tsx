@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const overviewLink = { href: "/", label: "Tổng quan" } as const;
 
@@ -41,25 +42,42 @@ function isCurrentRoute(pathname: string, href: string) {
 
 export function PrivateNavigation() {
   const pathname = usePathname();
+  const [compact, setCompact] = useState(false);
+  const [openCompactGroup, setOpenCompactGroup] = useState<string | null>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 980px)");
+    const update = () => {
+      setCompact(media.matches);
+      if (media.matches) setOpenCompactGroup(null);
+    };
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   return (
     <nav className="side-nav" aria-label="Điều hướng chính">
       <Link className="nav-link nav-overview" href={overviewLink.href} aria-current={isCurrentRoute(pathname, overviewLink.href) ? "page" : undefined}>
         {overviewLink.label}
       </Link>
-      {navigationGroups.map(({ id, label, items }) => <details
-        className="nav-group"
-        data-group={id}
-        key={id}
-        open={items.some(({ href }) => isCurrentRoute(pathname, href))}
-      >
-        <summary className="nav-group-label">{label}</summary>
+      {navigationGroups.map(({ id, label, items }) => {
+        const current = items.some(({ href }) => isCurrentRoute(pathname, href));
+        return <details
+          className="nav-group"
+          data-group={id}
+          key={id}
+          open={compact ? openCompactGroup === id : current}
+          onToggle={compact ? (event) => setOpenCompactGroup(event.currentTarget.open ? id : null) : undefined}
+        >
+        <summary className={current ? "nav-group-label nav-group-label-current" : "nav-group-label"}>{label}</summary>
         <div className="nav-group-links">
           {items.map(({ href, label: itemLabel }) => <Link className="nav-link" href={href} key={href} aria-current={isCurrentRoute(pathname, href) ? "page" : undefined}>
             {itemLabel}
           </Link>)}
         </div>
-      </details>)}
+      </details>;
+      })}
     </nav>
   );
 }

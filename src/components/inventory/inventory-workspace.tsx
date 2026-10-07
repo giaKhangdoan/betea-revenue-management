@@ -198,11 +198,14 @@ export function InventoryWorkspace({
       <Link className="button button-secondary" href="/inventory/history">Lịch sử kho</Link>
     </div> : null}
 
-    {owner && tab === "stock" ? <form className="inventory-date-filter" action="/inventory/export" method="get">
+    {owner && tab === "stock" ? <details className="inventory-export-disclosure">
+      <summary>Tải workbook Excel</summary>
+      <form className="inventory-date-filter" action="/inventory/export" method="get">
       <label className="field"><span>Từ ngày</span><input type="date" name="from" defaultValue={monthStart(today)} max={today} required /></label>
       <label className="field"><span>Đến ngày</span><input type="date" name="to" defaultValue={today} max={today} required /></label>
-      <button className="button button-secondary" type="submit">Tải workbook Excel</button>
-    </form> : null}
+      <button className="button button-secondary" type="submit">Tải file</button>
+      </form>
+    </details> : null}
 
     {tab === "catalog" && owner ? <section className="surface inventory-panel">{error
       ? <div className="empty-state"><h2>Chưa tải được danh mục</h2><p>Vui lòng tải lại trang sau ít phút.</p></div>

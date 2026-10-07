@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 import { saveRecipeCostWorkspace } from "@/app/(private)/product-costs/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
@@ -208,7 +207,6 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
       <div className="surface recipe-overview-metric"><span>Nguyên liệu</span><strong>{document.ingredients.length}</strong><small>Giá nhập và đơn vị cost</small></div>
       <div className="surface recipe-overview-metric"><span>Cốt / bán thành phẩm</span><strong>{document.batches.length}</strong><small>Mẻ, sản lượng và cost đơn vị</small></div>
       <div className="surface recipe-overview-metric"><span>Món trong menu</span><strong>{document.products.length}</strong><small>Cost theo từng size S · M · L</small></div>
-      <Link className="surface recipe-history-link" href="/product-costs/history"><span>Lịch sử thay đổi</span><strong>Xem các phiên bản đã lưu</strong><small>Giá cũ chỉ hiện tại đây.</small></Link>
     </div>
 
     <div className="recipe-cost-tabs" role="tablist" aria-label="Quản lý giá vốn">

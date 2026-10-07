@@ -185,7 +185,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </section>
         <section className="surface quick-actions-card">
           <div className="section-heading"><div><h2>Quản lý nhanh</h2><p>Nhập sổ và đối chiếu các khoản cần thiết.</p></div></div>
-          <Link className="quick-action" href={`/ledger/${today}`}><strong>Nhập doanh thu hôm nay</strong><span>Bốn ca, Grab/Shopee, công tơ, ghi chú và ảnh.</span></Link>
           <Link className="quick-action" href={`/costs?month=${selectedMonth}`}><strong>Cập nhật chi phí tháng</strong><span>COGS từ POS, thuê, lương, điện, nước và mục tiêu.</span></Link>
           <Link className="quick-action" href="/reports"><strong>Xem báo cáo theo kỳ</strong><span>Tuần, tháng, năm hoặc khoảng ngày tùy chọn.</span></Link>
         </section>
