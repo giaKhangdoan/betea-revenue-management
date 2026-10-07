@@ -94,6 +94,67 @@ function ComponentEditor({
   );
 }
 
+type ProductComponentRow = {
+  key: string;
+  sourceValue: string;
+  unit: string;
+  label: string;
+  occurrence: number;
+  units: Partial<Record<RecipeSize, string>>;
+  quantities: Partial<Record<RecipeSize, string>>;
+};
+
+function componentSourceValue(component: RecipeComponent) {
+  return component.kind === "ingredient"
+    ? `ingredient:${component.ingredientId}`
+    : `batch:${component.batchId}`;
+}
+
+function productComponentRows(product: RecipeProduct): ProductComponentRow[] {
+  const rows = new Map<string, ProductComponentRow>();
+  for (const size of sizes) {
+    const variant = product.variants.find((item) => item.size === size);
+    const occurrences = new Map<string, number>();
+    for (const component of variant?.components ?? []) {
+      const sourceValue = componentSourceValue(component);
+      const occurrence = occurrences.get(sourceValue) ?? 0;
+      occurrences.set(sourceValue, occurrence + 1);
+      const key = `${sourceValue}\u0000${occurrence}`;
+      const row = rows.get(key) ?? {
+        key,
+        sourceValue,
+        unit: component.unit,
+        label: component.label ?? sourceValue,
+        occurrence,
+        units: {},
+        quantities: {},
+      };
+      row.units[size] = component.unit;
+      row.quantities[size] = component.quantity;
+      rows.set(key, row);
+    }
+  }
+  return [...rows.values()];
+}
+
+function componentIndexForRow(components: RecipeComponent[], row: ProductComponentRow) {
+  let occurrence = 0;
+  for (let index = 0; index < components.length; index += 1) {
+    const component = components[index];
+    if (componentSourceValue(component) !== row.sourceValue) continue;
+    if (occurrence === row.occurrence) return index;
+    occurrence += 1;
+  }
+  return -1;
+}
+
+function recipeComponent(sourceValue: string, quantity: string, unit: string, label: string): RecipeComponent | null {
+  const [kind, sourceId] = sourceValue.split(":", 2);
+  if (kind === "ingredient" && sourceId) return { kind, ingredientId: sourceId, quantity, unit, label };
+  if (kind === "batch" && sourceId) return { kind, batchId: sourceId, quantity, unit, label };
+  return null;
+}
+
 export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiveDate }: {
   initialDocument: RecipeCostDocument | null;
   initialRevision: number;
@@ -178,8 +239,79 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
     setProductDraft((current) => current ? update(current) : current);
     setDraftDirty(true);
   }
-  function setSizeComponents(size: RecipeSize, components: RecipeComponent[]) {
-    updateProductDraft((product) => ({ ...product, variants: product.variants.map((variant) => variant.size === size ? { ...variant, components } : variant) }));
+  function updateProductMatrixSource(row: ProductComponentRow, sourceValue: string) {
+    const choice = productComponentChoices.find((item) => item.value === sourceValue);
+    if (!choice) return;
+    updateProductDraft((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => {
+        const components = [...variant.components];
+        const index = componentIndexForRow(components, row);
+        if (index < 0) return variant;
+        const current = components[index];
+        const replacement = recipeComponent(sourceValue, current.quantity, row.unit, choice.label);
+        if (!replacement) return variant;
+        components[index] = replacement;
+        return { ...variant, components };
+      }),
+    }));
+  }
+  function updateProductMatrixUnit(row: ProductComponentRow, unit: string) {
+    updateProductDraft((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => {
+        const components = [...variant.components];
+        const index = componentIndexForRow(components, row);
+        if (index < 0) return variant;
+        components[index] = { ...components[index], unit } as RecipeComponent;
+        return { ...variant, components };
+      }),
+    }));
+  }
+  function updateProductMatrixQuantity(row: ProductComponentRow, size: RecipeSize, quantity: string) {
+    const choice = productComponentChoices.find((item) => item.value === row.sourceValue);
+    updateProductDraft((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => {
+        if (variant.size !== size) return variant;
+        const components = [...variant.components];
+        const index = componentIndexForRow(components, row);
+        if (!quantity) {
+          if (index >= 0) components.splice(index, 1);
+          return { ...variant, components };
+        }
+        if (index >= 0) components[index] = { ...components[index], quantity } as RecipeComponent;
+        else {
+          const next = recipeComponent(row.sourceValue, quantity, row.unit, choice?.label ?? row.label);
+          if (next) components.push(next);
+        }
+        return { ...variant, components };
+      }),
+    }));
+  }
+  function removeProductMatrixRow(row: ProductComponentRow) {
+    updateProductDraft((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => {
+        const components = [...variant.components];
+        const index = componentIndexForRow(components, row);
+        if (index >= 0) components.splice(index, 1);
+        return { ...variant, components };
+      }),
+    }));
+  }
+  function addProductMatrixRow() {
+    if (!productDraft) return;
+    const rows = productComponentRows(productDraft);
+    const choice = productComponentChoices.find((item) => !rows.some((row) => row.sourceValue === item.value));
+    if (!choice) return;
+    updateProductDraft((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => ({
+        ...variant,
+        components: [...variant.components, recipeComponent(choice.value, "1", choice.unit, choice.label)!],
+      })),
+    }));
   }
   function deleteBatch() {
     if (!batchDraft) return;
@@ -204,6 +336,12 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
     updateProductDraft((product) => ({ ...product, variants: product.variants.map((variant) => variant.size === size ? { ...variant, [field]: value } as RecipeProductVariant : variant) }));
   }
   const componentSources = { ingredients: document.ingredients, batches: document.batches };
+  const productComponentChoices: ComponentChoice[] = [
+    ...document.ingredients.map((item) => ({ value: `ingredient:${item.id}`, label: item.name, unit: item.costUnit })),
+    ...document.batches.map((item) => ({ value: `batch:${item.id}`, label: item.name, unit: item.outputUnit })),
+  ];
+  const productRows = productDraft ? productComponentRows(productDraft) : [];
+  const productDraftVariants = productDraft ? sizes.flatMap((size) => productDraft.variants.filter((variant) => variant.size === size)) : [];
 
   return <div className="recipe-cost-workspace">
     <div className="recipe-cost-overview">
@@ -270,11 +408,26 @@ export function RecipeCostWorkspace({ initialDocument, initialRevision, effectiv
         {productDraft ? <div className="recipe-edit-form"><div className="section-heading"><div><h3>{document.products.some((item) => item.id === productDraft.id) ? "Sửa món" : "Món mới"}</h3><p>Cost mỗi size được tính từ các thành phần bên dưới.</p></div>{draftDirty ? <button type="button" className="text-button" onClick={() => { const saved = document.products.find((item) => item.id === productDraft.id); setProductDraft(saved ? structuredClone(saved) : null); setDraftDirty(false); }}>Bỏ thay đổi</button> : null}</div>
           <label className="field"><span>Tên món</span><input value={productDraft.name} onChange={(event) => updateProductDraft((product) => ({ ...product, name: event.target.value }))} /></label>
           <div className="recipe-size-add">{sizes.map((size) => <button type="button" key={size} className="button button-secondary" disabled={productDraft.variants.some((variant) => variant.size === size)} onClick={() => addVariant(size)}>Thêm size {size} · {size === "S" ? 12 : size === "M" ? 17 : 22}oz</button>)}</div>
-          {productDraft.variants.map((variant) => <div className="recipe-variant-editor" key={variant.size}><div className="section-heading"><div><h4>Size {variant.size} · {variant.size === "S" ? 12 : variant.size === "M" ? 17 : 22}oz</h4><p>{products[productDraft.id]?.variants[variant.size] ? `Cost hiện tại ${money(products[productDraft.id]?.variants[variant.size]?.totalCostVnd)}` : "Thêm công thức cho size này."}</p></div><button className="text-button" type="button" onClick={() => updateProductDraft((product) => ({ ...product, variants: product.variants.filter((item) => item.size !== variant.size) }))}>Bỏ size</button></div>
-            <label className="field recipe-sale-price"><span>Giá bán (₫)</span><input type="number" min="0" step="any" value={variant.salePriceVnd ?? ""} onChange={(event) => updateVariant(variant.size, "salePriceVnd", event.target.value || null)} /></label>
-            <ComponentEditor components={variant.components} onChange={(components) => setSizeComponents(variant.size, components)} ingredients={componentSources.ingredients} batches={componentSources.batches} />
-            {products[productDraft.id]?.variants[variant.size] ? <CostBreakdown lines={products[productDraft.id]!.variants[variant.size]!.lines} total={products[productDraft.id]!.variants[variant.size]!.totalCostVnd} profit={products[productDraft.id]!.variants[variant.size]!.grossProfitVnd} margin={products[productDraft.id]!.variants[variant.size]!.grossMarginPercent} /> : null}
-          </div>)}
+          <div className="recipe-product-size-cards">
+            {productDraftVariants.map((variant) => {
+              const cost = products[productDraft.id]?.variants[variant.size];
+              return <article className="recipe-product-size-card" key={variant.size}>
+                <div className="recipe-product-size-heading"><h4>Size {variant.size} · {variant.size === "S" ? 12 : variant.size === "M" ? 17 : 22}oz</h4><button className="text-button" type="button" onClick={() => updateProductDraft((product) => ({ ...product, variants: product.variants.filter((item) => item.size !== variant.size) }))}>Bỏ size</button></div>
+                <label className="field"><span>Giá bán (₫)</span><input type="number" min="0" step="any" value={variant.salePriceVnd ?? ""} onChange={(event) => updateVariant(variant.size, "salePriceVnd", event.target.value || null)} /></label>
+                <div className="recipe-product-size-cost"><span>Cost đã áp dụng</span><strong>{cost ? money(cost.totalCostVnd) : "Chưa tính"}</strong></div>
+                {cost ? <details className="recipe-product-size-breakdown"><summary>Xem chi tiết cost</summary><CostBreakdown lines={cost.lines} total={cost.totalCostVnd} profit={cost.grossProfitVnd} margin={cost.grossMarginPercent} /></details> : null}
+              </article>;
+            })}
+          </div>
+          <section className="recipe-product-component-matrix" aria-label="Nguyên liệu theo từng size">
+            <div className="recipe-product-matrix-heading"><div><h4>Nguyên liệu và cốt</h4><p>Chọn mỗi thành phần một lần, rồi nhập lượng dùng cho từng size.</p></div><button className="button button-secondary" type="button" disabled={!productComponentChoices.length || productRows.length >= productComponentChoices.length} onClick={addProductMatrixRow}>Thêm thành phần</button></div>
+            {productRows.length ? <div className="recipe-matrix-scroll"><table className="recipe-size-matrix"><thead><tr><th scope="col">Thành phần</th><th scope="col">Đơn vị</th>{productDraftVariants.map((variant) => <th scope="col" key={variant.size}>Size {variant.size}</th>)}<th scope="col"><span className="sr-only">Thao tác</span></th></tr></thead><tbody>{productRows.map((row) => <tr key={row.key}>
+              <td><select aria-label="Nguyên liệu hoặc cốt" value={row.sourceValue} onChange={(event) => updateProductMatrixSource(row, event.target.value)}>{productComponentChoices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></td>
+              <td><input aria-label={`Đơn vị ${row.label}`} value={row.unit} onChange={(event) => updateProductMatrixUnit(row, event.target.value)} />{new Set(Object.values(row.units)).size > 1 ? <small className="recipe-unit-difference">Khác: {Object.entries(row.units).map(([size, unit]) => size + ": " + unit).join(" · ")}</small> : null}</td>
+              {productDraftVariants.map((variant) => <td key={variant.size}><input aria-label={`Lượng ${row.label} size ${variant.size}`} type="number" min="0" step="any" value={row.quantities[variant.size] ?? ""} onChange={(event) => updateProductMatrixQuantity(row, variant.size, event.target.value)} /></td>)}
+              <td><button className="button button-secondary recipe-remove-line" type="button" aria-label={`Bỏ ${row.label}`} onClick={() => removeProductMatrixRow(row)}>Bỏ</button></td>
+            </tr>)}</tbody></table></div> : <p className="form-note">Chọn các size cần bán, rồi thêm nguyên liệu hoặc cốt để bắt đầu công thức.</p>}
+          </section>
           {draftDirty ? <p className="form-note">Thay đổi chưa áp dụng. Hãy áp dụng món trước khi lưu workspace.</p> : null}
           <div className="recipe-edit-actions"><button type="button" className="button button-secondary" disabled={!productDraft.name.trim() || !productDraft.variants.length || productDraft.variants.some((variant) => !variant.components.length)} onClick={applyProduct}>Áp dụng món vào workspace</button><button type="button" className="button button-danger" disabled={!document.products.some((item) => item.id === productDraft.id)} onClick={deleteProduct}>Xóa món</button></div>
         </div> : <p className="form-note">Chọn một món hoặc thêm món mới để nhập công thức.</p>}

@@ -9,7 +9,7 @@ const stepSchema = z.object({
 
 const sopVariantSchema = z.object({
   size: z.enum(["S", "M", "L"]),
-  steps: z.array(stepSchema).max(40),
+  steps: z.array(stepSchema).max(40).optional(),
   notes: z.string().max(1200).optional(),
 }).strict();
 
@@ -17,6 +17,8 @@ export const sopDocumentSchema = z.object({
   products: z.array(z.object({
     productId: z.string().min(1).max(120),
     variants: z.array(sopVariantSchema).max(3),
+    steps: z.array(stepSchema).max(40).optional(),
+    notes: z.string().max(1200).optional(),
   }).strict()).max(1000),
 }).strict().superRefine((document, context) => {
   const productIds = new Set<string>();
@@ -32,12 +34,19 @@ export const sopDocumentSchema = z.object({
       }
       sizes.add(variant.size);
       const stepIds = new Set<string>();
-      variant.steps.forEach((step, stepIndex) => {
+      (variant.steps ?? []).forEach((step, stepIndex) => {
         if (stepIds.has(step.id)) {
           context.addIssue({ code: "custom", path: ["products", productIndex, "variants", variantIndex, "steps", stepIndex, "id"], message: "Mã bước pha bị lặp." });
         }
         stepIds.add(step.id);
       });
+    });
+    const sharedStepIds = new Set<string>();
+    (product.steps ?? []).forEach((step, stepIndex) => {
+      if (sharedStepIds.has(step.id)) {
+        context.addIssue({ code: "custom", path: ["products", productIndex, "steps", stepIndex, "id"], message: "Mã bước pha bị lặp." });
+      }
+      sharedStepIds.add(step.id);
     });
   });
 });
@@ -52,12 +61,17 @@ const staffVariantSchema = z.object({
   size: z.enum(["S", "M", "L"]),
   sizeOz: z.union([z.literal(12), z.literal(17), z.literal(22)]),
   components: z.array(staffComponentSchema).min(1).max(200),
-  steps: z.array(staffStepSchema).min(1).max(40),
+  steps: z.array(staffStepSchema).min(1).max(40).optional(),
   notes: z.string().max(1200).optional(),
 }).strict();
 
 export const staffSopPublicationSchema = z.object({
-  products: z.array(z.object({ name: z.string().min(1).max(240), variants: z.array(staffVariantSchema).min(1).max(3) }).strict()).min(1).max(1000),
+  products: z.array(z.object({
+    name: z.string().min(1).max(240),
+    variants: z.array(staffVariantSchema).min(1).max(3),
+    steps: z.array(staffStepSchema).min(1).max(40).optional(),
+    notes: z.string().max(1200).optional(),
+  }).strict()).min(1).max(1000),
 }).strict();
 
 export type SopDocument = z.infer<typeof sopDocumentSchema>;
@@ -78,7 +92,8 @@ export function buildStaffSopProjection(input: unknown, recipe: RecipeCostDocume
       variants: sopProduct.variants.map((sopVariant) => {
         const variant = product.variants.find((candidate) => candidate.size === sopVariant.size);
         if (!variant) throw new Error(`Size ${sopVariant.size} của món ${product.name} không còn trong công thức.`);
-        if (!sopVariant.steps.length || sopVariant.steps.some((step) => !step.title.trim() || !step.instruction.trim())) {
+        const steps = sopProduct.steps ?? sopVariant.steps ?? [];
+        if (!steps.length || steps.some((step) => !step.title.trim() || !step.instruction.trim())) {
           throw new Error(`Hãy hoàn tất các bước pha của món ${product.name} size ${sopVariant.size}.`);
         }
         const components = variant.components.map((component) => {
@@ -97,10 +112,12 @@ export function buildStaffSopProjection(input: unknown, recipe: RecipeCostDocume
           size: sopVariant.size,
           sizeOz: sizeOz[sopVariant.size],
           components,
-          steps: sopVariant.steps.map((step) => ({ title: step.title.trim(), instruction: step.instruction.trim() })),
-          ...(sopVariant.notes?.trim() ? { notes: sopVariant.notes.trim() } : {}),
+          ...(!sopProduct.steps ? { steps: steps.map((step) => ({ title: step.title.trim(), instruction: step.instruction.trim() })) } : {}),
+          ...(sopProduct.notes === undefined && sopVariant.notes?.trim() ? { notes: sopVariant.notes.trim() } : {}),
         };
       }),
+      ...(sopProduct.steps ? { steps: sopProduct.steps.map((step) => ({ title: step.title.trim(), instruction: step.instruction.trim() })) } : {}),
+      ...(sopProduct.notes?.trim() ? { notes: sopProduct.notes.trim() } : {}),
     };
   });
 
