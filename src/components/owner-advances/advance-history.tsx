@@ -150,8 +150,8 @@ function SnapshotPanel({ title, snapshot }: { title: string; snapshot: Snapshot 
 }
 
 export function AdvanceHistory({ events, ownerId }: { events: AdvanceAuditEvent[]; ownerId: string }) {
-  return <section className="surface owner-purchase-detail-card owner-purchase-history">
-    <div className="section-heading"><div><h2>Lịch sử thay đổi</h2><p>Các quyết định tài chính và hiệu chỉnh được ghi nối tiếp, không xóa lịch sử cũ.</p></div><span className="status status-neutral">{events.length}</span></div>
+  return <details className="surface owner-purchase-detail-card owner-purchase-history">
+    <summary className="owner-purchase-history-toggle"><strong>Lịch sử thay đổi</strong><span>{events.length} mốc</span></summary>
     {events.length ? <ol className="owner-purchase-history-list">{events.map((event) => {
       const before = asSnapshot(event.before_state);
       const after = asSnapshot(event.after_state);
@@ -160,7 +160,7 @@ export function AdvanceHistory({ events, ownerId }: { events: AdvanceAuditEvent[
         <div className="owner-purchase-history-marker" aria-hidden="true" />
         <div className="owner-purchase-history-content">
           <div className="owner-purchase-history-heading"><strong>{EVENT_LABELS[event.event_type] ?? "Cập nhật phiếu"}</strong><time dateTime={event.occurred_at}>{new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(event.occurred_at))}</time></div>
-          <span className="owner-purchase-history-actor">Admin · {event.actor_id === ownerId ? "tài khoản chủ cửa hàng" : event.actor_id ? event.actor_id.slice(0, 8) : "không có mã người thực hiện"}</span>
+          <span className="owner-purchase-history-actor">{event.actor_id === ownerId ? "Bạn" : event.actor_id ? `Admin · ${event.actor_id.slice(0, 8)}` : "Không rõ người thực hiện"}</span>
           {event.reason ? <p className="owner-purchase-history-reason">Lý do: {event.reason}</p> : null}
           {event.related_id ? <small className="owner-purchase-history-related">Mã liên kết: {event.related_id}</small> : null}
           {hasSnapshots ? <details className="owner-purchase-history-diff"><summary>Xem dữ liệu trước và sau</summary><div className="owner-purchase-history-snapshots">
@@ -169,6 +169,6 @@ export function AdvanceHistory({ events, ownerId }: { events: AdvanceAuditEvent[
           </div></details> : null}
         </div>
       </li>;
-    })}</ol> : <p className="form-note">Chưa có sự kiện lịch sử.</p>}
-  </section>;
+    })}</ol> : <p className="form-note">Chưa có thay đổi.</p>}
+  </details>;
 }

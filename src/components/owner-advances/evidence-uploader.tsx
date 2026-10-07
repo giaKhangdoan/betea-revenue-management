@@ -17,7 +17,7 @@ type UploadResponse = { uploadIntentId?: string; uploadUrl?: string; requiredHea
 const acceptedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxFileSize = 2 * 1024 * 1024;
 
-export function EvidenceUploader({ voucherId, reimbursementId }: { voucherId: string; reimbursementId?: string | null }) {
+export function EvidenceUploader({ voucherId, reimbursementId, heading = "Ảnh xác nhận khoản hoàn" }: { voucherId: string; reimbursementId?: string | null; heading?: string }) {
   const router = useRouter();
   const previewUrls = useRef(new Set<string>());
   const [items, setItems] = useState<UploadItem[]>([]);
@@ -113,8 +113,8 @@ export function EvidenceUploader({ voucherId, reimbursementId }: { voucherId: st
     router.refresh();
   }
 
-  return <section className="owner-evidence-uploader" aria-label="Tải ảnh hóa đơn">
-    <div className="owner-evidence-upload-heading"><div><strong>Ảnh hóa đơn và chứng từ</strong><p>Ảnh được lưu riêng tư. Chọn nhiều ảnh; mỗi ảnh tối đa 2 MB.</p></div>
+  return <section className="owner-evidence-uploader" aria-label={heading}>
+    <div className="owner-evidence-upload-heading"><div><strong>{heading}</strong><p>Ảnh riêng tư · tối đa 2 MB/ảnh.</p></div>
       <label className="button button-secondary owner-evidence-pick">Chọn ảnh<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { addFiles(event.currentTarget.files); event.currentTarget.value = ""; }} /></label>
     </div>
     {items.length ? <div className="owner-evidence-queue">{items.map((item) => <article className="owner-evidence-queue-item" key={item.id}>

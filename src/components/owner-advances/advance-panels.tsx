@@ -162,7 +162,7 @@ function ReimbursementEntryForm({
       {state?.success ? <p className="form-success" role="status">{state.success}{result?.outstanding_vnd !== undefined ? ` Số còn ứng: ${formatVnd(result.outstanding_vnd)}.` : ""}</p> : null}
       <button className="button button-secondary" type="submit" disabled={pending || (remaining !== null && remaining <= 0)}>{pending ? "Đang lưu…" : reversalEvent ? "Ghi điều chỉnh hoàn tiền" : "Ghi nhận tiền đã hoàn"}</button>
     </form>
-    {result?.event_id ? <div className="owner-purchase-reimbursement-proof"><p className="form-note">Có thể thêm ảnh xác nhận khoản hoàn vừa ghi.</p><EvidenceUploader voucherId={voucherId} reimbursementId={result.event_id} /></div> : null}
+    {result?.event_id ? <div className="owner-purchase-reimbursement-proof"><EvidenceUploader voucherId={voucherId} reimbursementId={result.event_id} heading="Ảnh xác nhận khoản hoàn" /></div> : null}
   </div>;
 }
 
@@ -186,10 +186,9 @@ export function ReimbursementPanel({
     reversedByEvent.set(event.reverses_event_id, (reversedByEvent.get(event.reverses_event_id) ?? 0) + Number(event.amount_vnd));
   }
   return <section className="surface owner-purchase-financial-panel">
-    <div className="section-heading"><div><h2>Tiền đã hoàn lại</h2><p>Các lần hoàn được cộng nối tiếp, không sửa hoặc xóa lịch sử cũ.</p></div></div>
-    <div className="owner-purchase-balance-grid"><div><span>Đã hoàn</span><strong>{formatVnd(summary.reimbursedVnd)}</strong></div><div><span>Còn ứng</span><strong>{formatVnd(summary.outstandingVnd)}</strong></div></div>
+    <div className="section-heading"><div><h2>Tiền đã hoàn lại</h2></div></div>
     {events.length ? <ol className="owner-purchase-event-list">{events.map((event) => <li key={event.id}>
-      <div><strong>{event.event_type === "payment" ? "Cửa hàng hoàn tiền" : "Điều chỉnh lần hoàn"}</strong><span>{formatBusinessDate(event.business_date, { day: "numeric", month: "short", year: "numeric" })}{event.note ? ` · ${event.note}` : ""}</span><small>{formatBusinessDate(event.created_at.slice(0, 10), { day: "numeric", month: "short", year: "numeric" })} · do admin ghi nhận</small></div>
+      <div><strong>{event.event_type === "payment" ? "Cửa hàng hoàn tiền" : "Điều chỉnh lần hoàn"}</strong><span>{formatBusinessDate(event.business_date, { day: "numeric", month: "short", year: "numeric" })}{event.note ? ` · ${event.note}` : ""}</span><small>Ghi nhận ngày {formatBusinessDate(event.created_at.slice(0, 10), { day: "numeric", month: "short", year: "numeric" })}</small></div>
       <strong className={event.event_type === "payment" ? "owner-purchase-event-positive" : "owner-purchase-event-reversal"}>{event.event_type === "payment" ? "+" : "−"}{formatVnd(Number(event.amount_vnd))}</strong>
       {allowReimbursement && event.event_type === "payment" && (reversedByEvent.get(event.id) ?? 0) < Number(event.amount_vnd) ? <button className="button button-plain" type="button" onClick={() => setReversalEventId((current) => current === event.id ? "" : event.id)}>{reversalEventId === event.id ? "Đóng điều chỉnh" : "Điều chỉnh"}</button> : null}
       {reversalEventId === event.id ? <div className="owner-purchase-reversal-form"><ReimbursementEntryForm key={`${idempotencyKey}-${event.id}`} voucherId={voucherId} idempotencyKey={idempotencyKey} events={events} reversalEvent={event} /></div> : null}

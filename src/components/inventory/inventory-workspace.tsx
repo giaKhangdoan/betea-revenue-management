@@ -41,7 +41,7 @@ function InventoryStockSnapshotPanel({
 
   return <section className="surface inventory-panel inventory-stock-panel">
     {error ? <div className="empty-state"><h2>Chưa tải được tồn kho</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : snapshot ? <>
-      <div className="section-heading"><div><h2>Hàng còn lại</h2><p>{items.length} mặt hàng · {countedItemCount} có số kiểm gần nhất · {items.length - countedItemCount} chưa kiểm sau khi thêm mới</p><p>Lần kiểm gần nhất · {formatBusinessDate(snapshot.business_date, { day: "numeric", month: "long", year: "numeric" })} · {formatInventoryTimestamp(snapshot.finalized_at)}</p></div><span className={`status ${snapshot.history_integrity?.status === "unverified" ? "status-warning" : "status-success"}`}>{snapshot.history_integrity?.status === "unverified" ? "Cần đối chiếu" : "Đã kiểm"}</span></div>
+      <div className="section-heading"><div><h2>Hàng còn lại</h2><p>{items.length} mặt hàng · {items.length - countedItemCount} chưa có số kiểm</p><p>Lần kiểm gần nhất · {formatBusinessDate(snapshot.business_date, { day: "numeric", month: "long", year: "numeric" })} · {formatInventoryTimestamp(snapshot.finalized_at)}</p></div><span className={`status ${snapshot.history_integrity?.status === "unverified" ? "status-warning" : "status-success"}`}>{snapshot.history_integrity?.status === "unverified" ? "Cần đối chiếu" : "Đã kiểm"}</span></div>
       {snapshot.history_integrity?.status === "unverified" ? <p className="inventory-history-warning" role="status">Dữ liệu của lần kiểm này chưa xác minh được toàn bộ lịch sử. Số lượng bên dưới là số đang lưu hiện tại.</p> : null}
       {latestReceiptsError ? <p className="inventory-history-warning" role="status">Chưa tải được phiếu nhập mới nhất cho các mặt hàng chưa có số kiểm.</p> : null}
       {items.length === 0 ? <p className="empty-inline">Chưa có mặt hàng đang hoạt động.</p> : <ul className="inventory-stock-list">{items.map((item) => {
@@ -49,7 +49,7 @@ function InventoryStockSnapshotPanel({
         const latestReceipt = latestReceiptByItem.get(item.id);
         const receivedQuantity = latestReceipt?.lines.map(receiptQuantity).join(" + ");
         const label = counted
-          ? `Số tại lần kiểm · ${formatBusinessDate(snapshot.business_date)}`
+          ? "Số kiểm gần nhất"
           : latestReceipt
             ? `Theo phiếu ${latestReceipt.receipt_code} · ${formatInventoryTimestamp(latestReceipt.received_at)} · chưa kiểm`
             : latestReceiptsError
@@ -61,8 +61,8 @@ function InventoryStockSnapshotPanel({
         </li>;
       })}</ul>}
     </> : error ? <div className="empty-state"><h2>Chưa tải được tồn kho</h2><p>Vui lòng tải lại trang sau ít phút.</p></div> : <>
-      <div className="section-heading"><div><h2>Hàng trong kho</h2><p>{items.length} mặt hàng · chưa có bản kiểm đã chốt</p></div><span className="status status-warning">Chưa kiểm</span></div>
-      <p className="inventory-movement-note">Mặt hàng chưa kiểm hiển thị số lượng theo phiếu nhập gần nhất để tiện theo dõi.</p>
+      <div className="section-heading"><div><h2>Hàng trong kho</h2><p>{items.length} mặt hàng</p></div><span className="status status-warning">Chưa kiểm</span></div>
+      <p className="inventory-movement-note">Đang hiển thị số theo phiếu nhập gần nhất.</p>
       {latestReceiptsError ? <p className="inventory-history-warning" role="status">Chưa tải được phiếu nhập mới nhất.</p> : null}
       {items.length === 0 ? <p className="empty-inline">Chưa có mặt hàng đang hoạt động.</p> : <ul className="inventory-stock-list">{items.map((item) => {
         const latestReceipt = latestReceiptByItem.get(item.id);
@@ -196,7 +196,6 @@ export function InventoryWorkspace({
 
     {owner && tab !== "catalog" ? <div className="inventory-history-entry">
       <Link className="button button-secondary" href="/inventory/history">Lịch sử kho</Link>
-      <span>Lịch sử chỉ tải khi bạn mở mục này.</span>
     </div> : null}
 
     {owner && tab === "stock" ? <form className="inventory-date-filter" action="/inventory/export" method="get">

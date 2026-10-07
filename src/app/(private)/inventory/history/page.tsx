@@ -19,7 +19,7 @@ function formatTimestamp(value: string) {
 function HistoryHeading({ view }: { view: "receipts" | "counts" }) {
   return <>
     <div className="page-heading">
-      <div><p className="eyebrow">QUẢN LÝ CỬA HÀNG</p><h1>Lịch sử kho</h1><p>Mỗi lần mở chỉ tải tối đa 20 phiếu hoặc bản kiểm.</p></div>
+      <div><p className="eyebrow">QUẢN LÝ CỬA HÀNG</p><h1>Lịch sử kho</h1></div>
       <Link className="button button-secondary" href="/inventory?tab=stock">Quay lại tồn kho</Link>
     </div>
     <nav className="inventory-tabs" aria-label="Loại lịch sử">

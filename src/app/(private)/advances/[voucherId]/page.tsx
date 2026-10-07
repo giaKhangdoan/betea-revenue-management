@@ -82,7 +82,7 @@ export default async function OwnerPurchaseVoucherPage({ params }: { params: Pro
 
     <section className="owner-purchase-detail-summary">
       <article className="surface"><span>Tổng hóa đơn</span><strong>{formatVnd(Number(voucher.invoice_total_vnd))}</strong><small>Ngày mua {formatBusinessDate(voucher.purchase_date, { day: "numeric", month: "long", year: "numeric" })}</small></article>
-      <article className="surface"><span>Đã hoàn</span><strong>{formatVnd(balance.reimbursedVnd)}</strong><small>Lịch sử hoàn nối tiếp, có điều chỉnh</small></article>
+      <article className="surface"><span>Đã hoàn</span><strong>{formatVnd(balance.reimbursedVnd)}</strong></article>
       <article className="surface"><span>Còn ứng</span><strong>{formatVnd(balance.outstandingVnd)}</strong><small>{voucher.status === "draft" ? "Bản nháp chưa được tính vào số dư" : "Số dư khoản admin đã ứng"}</small></article>
     </section>
 
@@ -97,15 +97,15 @@ export default async function OwnerPurchaseVoucherPage({ params }: { params: Pro
         </section>
 
         <section className="surface owner-purchase-detail-card">
-          <div className="section-heading"><div><h2>Ảnh hóa đơn và chứng từ</h2><p>Ảnh riêng tư trên kho R2; bấm từng ảnh để mở liên kết xem tạm.</p></div><span className="status status-neutral">{evidence.length}{evidenceTruncated ? "+" : ""} ảnh</span></div>
+          <div className="section-heading"><div><h2>Ảnh hóa đơn và chứng từ</h2></div><span className="status status-neutral">{evidence.length}{evidenceTruncated ? "+" : ""} ảnh</span></div>
           <EvidenceGallery evidence={evidenceItems} />
           {evidenceTruncated ? <p className="form-note">Danh sách chỉ tải 100 ảnh gần nhất để trang không phải lấy toàn bộ chứng từ cùng lúc.</p> : null}
-          {voucher.status !== "canceled" ? <EvidenceUploader voucherId={voucher.id} /> : null}
+          {voucher.status !== "canceled" ? <EvidenceUploader voucherId={voucher.id} heading="Thêm ảnh" /> : null}
         </section>
 
         {voucher.status === "draft" ? <>
           <details className="surface owner-purchase-detail-card owner-purchase-edit-draft">
-            <summary><span><strong>Chỉnh sửa bản nháp</strong><small>Thay đổi thông tin trước khi chốt</small></span><span className="owner-purchase-create-toggle">Mở biểu mẫu</span></summary>
+            <summary><span><strong>Chỉnh sửa bản nháp</strong></span><span className="owner-purchase-create-toggle">Mở biểu mẫu</span></summary>
             <PurchaseVoucherForm items={inventoryChoices.items} voucher={voucher} lines={lines} mode="draft" />
           </details>
           <VoucherFinalizationPanel
@@ -116,14 +116,14 @@ export default async function OwnerPurchaseVoucherPage({ params }: { params: Pro
             receiptCheckError={receiptCandidates.error}
             idempotencyKey={randomUUID()}
           />
-          <details className="surface owner-purchase-detail-card owner-purchase-cancel-card"><summary><span><strong>Hủy bản nháp</strong><small>Yêu cầu ghi lý do; phiếu không được xóa khỏi lịch sử</small></span><span className="owner-purchase-create-toggle">Mở</span></summary><CancelPurchaseDraftForm voucherId={voucher.id} /></details>
+          <details className="surface owner-purchase-detail-card owner-purchase-cancel-card"><summary><span><strong>Hủy bản nháp</strong><small>Cần ghi lý do</small></span><span className="owner-purchase-create-toggle">Mở</span></summary><CancelPurchaseDraftForm voucherId={voucher.id} /></details>
         </> : null}
 
         {voucher.status === "finalized" ? <>
           <ReimbursementPanel key={`repayment-${randomUUID()}`} voucherId={voucher.id} invoiceTotalVnd={voucher.invoice_total_vnd} events={reimbursements} idempotencyKey={randomUUID()} allowReimbursement />
           <ProfitPostingPanel key={`profit-${randomUUID()}`} voucherId={voucher.id} purchaseDate={voucher.purchase_date} lines={unpostedProfitLines} postings={postingRows as never} idempotencyKey={randomUUID()} />
           <details className="surface owner-purchase-detail-card owner-purchase-correction-card">
-            <summary><span><strong>Hiệu chỉnh phiếu đã chốt</strong><small>Ghi thay đổi mới; không ghi đè lịch sử kho hoặc lần hoàn cũ</small></span><span className="owner-purchase-create-toggle">Mở biểu mẫu</span></summary>
+            <summary><span><strong>Hiệu chỉnh phiếu đã chốt</strong><small>Tạo mốc mới, giữ nguyên lịch sử cũ</small></span><span className="owner-purchase-create-toggle">Mở biểu mẫu</span></summary>
             {hasActivePostings ? <p className="inventory-history-warning">Phiếu có khoản đang tác động lợi nhuận. Hãy mở lịch sử ghi nhận bên dưới và hoàn tác bút toán trước khi sửa tiền hoặc dòng hàng.</p> : <PurchaseVoucherForm items={inventoryChoices.items} voucher={voucher} lines={lines} mode="correction" />}
           </details>
           {alreadyPostedLines.length ? <p className="form-note owner-purchase-posted-note">{alreadyPostedLines.length} dòng đã được ghi vào lợi nhuận; chúng không xuất hiện lại trong danh sách ghi nhận.</p> : null}

@@ -22,7 +22,7 @@ describe("owner purchase audit history", () => {
     }));
 
     expect(markup).toContain("Hiệu chỉnh phiếu đã chốt");
-    expect(markup).toContain("Admin · tài khoản chủ cửa hàng");
+    expect(markup).toContain("Bạn");
     expect(markup).toContain("Sửa số lượng theo hóa đơn");
     expect(markup).toContain("100.000");
     expect(markup).toContain("120.000");
