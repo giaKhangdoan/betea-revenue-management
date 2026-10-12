@@ -4,9 +4,9 @@ Tài liệu này mô tả API và dữ liệu theo mã nguồn hiện tại. Tà
 
 ## 1. Kết luận về khả năng tích hợp hiện tại
 
-Mã nguồn hiện có REST API đọc chỉ số điện dành cho AI bên ngoài tại `GET /api/ai/v1/electricity`. API này dùng bearer token riêng và chỉ trả chỉ số điện cùng kWh sử dụng; các trang dashboard và báo cáo khác vẫn đọc bằng Supabase server client gắn với phiên đăng nhập. Các thao tác ghi được triển khai bằng Next.js Server Actions; đây là giao tiếp nội bộ của giao diện, không phải API ổn định để cấp cho nhà cung cấp AI.
+Mã nguồn hiện có REST API công khai chỉ đọc chỉ số điện dành cho AI bên ngoài tại `GET /api/ai/v1/electricity`. API không yêu cầu đăng nhập hoặc token và chỉ trả chỉ số điện cùng kWh sử dụng. Bất kỳ ai biết URL đều có thể đọc dữ liệu điện trong khoảng ngày được hỗ trợ; không dùng endpoint này để trả thêm doanh thu, lợi nhuận hay dữ liệu nhạy cảm khác. Các trang dashboard và báo cáo vẫn đọc bằng Supabase server client gắn với phiên đăng nhập. Các thao tác ghi được triển khai bằng Next.js Server Actions; đây là giao tiếp nội bộ của giao diện, không phải API ổn định để cấp cho nhà cung cấp AI.
 
-Không gửi tài khoản đăng nhập, cookie phiên, khóa `SUPABASE_SERVICE_ROLE_KEY`, khóa Supabase hay quyền truy cập trực tiếp database cho bên thứ ba. Token API điện đã được lưu dưới dạng biến nhạy cảm `BETEA_ELECTRICITY_API_TOKEN` trong môi trường production của Vercel; endpoint có hiệu lực khi phiên bản mã nguồn này được deploy.
+Không gửi tài khoản đăng nhập, cookie phiên, khóa `SUPABASE_SERVICE_ROLE_KEY`, khóa Supabase hay quyền truy cập trực tiếp database cho bên thứ ba.
 
 ## 2. REST routes hiện đang có
 
@@ -25,7 +25,7 @@ Các URL dưới đây nằm dưới domain triển khai của ứng dụng. Rou
 | `POST /api/admin/advances/evidence/finalize` | Phiên owner | Xác minh và gắn ảnh hóa đơn vào phiếu mua | Không. Đây là luồng ghi dữ liệu |
 | `POST /api/admin/advances/evidence/cleanup` | Phiên owner | Dọn các ảnh tải dở đã hết hạn | Không. Route có thể xóa đối tượng R2 tạm |
 | `GET /api/admin/advances/evidence/{evidenceId}/url` | Phiên owner | Trả URL xem ảnh hóa đơn riêng tư, có thời hạn 5 phút | Không. Chứng từ mua hàng nhạy cảm |
-| `GET /api/ai/v1/electricity?date=YYYY-MM-DD` hoặc `?from=YYYY-MM-DD&to=YYYY-MM-DD` | `Authorization: Bearer <BETEA_ELECTRICITY_API_TOKEN>` | Đọc chỉ số công tơ và kWh tiêu thụ; giới hạn 31 ngày mỗi request | Có, chỉ khi owner cấp token tích hợp |
+| `GET /api/ai/v1/electricity?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD` | Công khai, không cần đăng nhập hoặc token | Đọc chỉ số công tơ và kWh tiêu thụ; giới hạn 31 ngày mỗi request | Có, chỉ gồm dữ liệu điện |
 | `POST /api/recipe-cost/import` | Phiên owner | Xem trước hoặc nhập workbook `.xlsx` giá vốn; chế độ xác nhận sẽ ghi dữ liệu | Không. Có chế độ ghi dữ liệu và chứa giá vốn nhạy cảm |
 | `GET /inventory/export?from=YYYY-MM-DD&to=YYYY-MM-DD` | Phiên owner | Tải workbook lịch sử kho; tối đa 366 ngày mỗi lần | Không phải API JSON; chỉ dùng trong website để xuất file |
 
@@ -81,20 +81,15 @@ Schema `private` còn chứa một số bảng/trình trợ giúp nội bộ cho
 
 ## 6. Tích hợp AI ngoài phạm vi số điện
 
-Endpoint điện đã có trong mã nguồn. Nếu sau này cần AI đọc doanh thu, lợi nhuận, khoản mua, kho hoặc giá vốn, các API bên dưới vẫn chỉ là **đề xuất, chưa được triển khai**; không dùng token điện để đọc các miền dữ liệu này.
+Endpoint điện đã có trong mã nguồn. Nếu sau này cần AI đọc doanh thu, lợi nhuận, khoản mua, kho hoặc giá vốn, các API bên dưới vẫn chỉ là **đề xuất, chưa được triển khai**; không mở rộng endpoint điện công khai sang các miền dữ liệu này.
 
-Bot gọi endpoint điện với header bearer riêng:
+Bot gọi endpoint điện bằng HTTP GET, không cần header xác thực. Để lấy một ngày, truyền cùng ngày ở `fromDate` và `toDate`:
 
 ```http
-GET https://betea-revenue-management.vercel.app/api/ai/v1/electricity?date=2026-10-11
-Authorization: Bearer <BETEA_ELECTRICITY_API_TOKEN>
+GET https://betea-revenue-management.vercel.app/api/ai/v1/electricity?fromDate=2026-10-11&toDate=2026-10-11
 ```
 
-Có thể truy vấn nhiều ngày bằng `from` và `to` (tối đa 31 ngày). Token phải là chuỗi ngẫu nhiên tối thiểu 32 ký tự và đặt trong biến môi trường Vercel `BETEA_ELECTRICITY_API_TOKEN`; không đặt token trong URL hoặc mã nguồn. Mẫu tạo token bằng Node.js:
-
-```sh
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-```
+Có thể truy vấn nhiều ngày bằng cách đặt ngày bắt đầu ở `fromDate` và ngày kết thúc ở `toDate` (tối đa 31 ngày, định dạng `YYYY-MM-DD`). Không cần cấu hình token hoặc gửi Authorization header.
 
 Phản hồi có `timezone`, đơn vị `kWh`, thời điểm tạo và `items`. Mỗi item có `status` là `complete`, `missing_reading`, `meter_decrease` hoặc `no_record`, ba số đọc công tơ và mức dùng trong giờ hoạt động, qua đêm, tổng ngày. Tổng ngày chưa hoàn tất nếu chưa có chỉ số sáng hôm sau.
 
@@ -111,13 +106,12 @@ Contract nên dùng JSON versioned, VND là integer, ngày là `YYYY-MM-DD`, ph�
 
 ## 7. Yêu cầu bảo mật cho implementation tích hợp
 
-1. API hiện dùng một bearer token ngẫu nhiên 256-bit, lưu dưới dạng biến nhạy cảm Vercel. Token chỉ đọc điện cho cửa hàng Betea; xoay vòng bằng cách cập nhật biến môi trường và deploy lại. Chưa có hạn sử dụng hoặc nhiều token theo từng nhà cung cấp.
-2. Chỉ gửi token qua phần quản lý secrets của bot Discord. Không đưa vào trình duyệt, prompt/chat, repo, URL query hoặc log. Không dùng mật khẩu owner/nhân viên, cookie trình duyệt hay `SUPABASE_SERVICE_ROLE_KEY`.
-3. Endpoint tự khóa `owner_id`, chỉ chọn hai cột chỉ số điện, chỉ hỗ trợ GET và giới hạn tối đa 31 ngày mỗi lần. Chưa có rate limit hay audit log riêng cho các lần đọc API.
-4. Supabase service-role key chỉ được dùng trong route phía server và không được trả về cho bên AI. Không cấp quyền database, quyền RPC hay public bucket cho bot.
-5. Dữ liệu API không gồm doanh thu, lợi nhuận, nhân viên, COGS, khoản mua, ảnh hoặc chứng từ.
-6. Phản hồi không được cache (`Cache-Control: private, no-store, max-age=0`).
+1. API này được chủ ý để công khai và không xác thực. Bất kỳ ai có URL đều có thể đọc dữ liệu điện của Betea trong phạm vi ngày hỗ trợ; không đưa dữ liệu riêng tư khác vào response này.
+2. Endpoint tự khóa `owner_id`, chỉ chọn hai cột chỉ số điện, chỉ hỗ trợ GET và giới hạn tối đa 31 ngày mỗi lần. Chưa có rate limit hay audit log riêng cho các lần đọc API.
+3. Supabase service-role key chỉ được dùng trong route phía server và không được trả về cho bên AI. Không cấp quyền database, quyền RPC hay public bucket cho bot.
+4. Dữ liệu API không gồm doanh thu, lợi nhuận, nhân viên, COGS, khoản mua, ảnh hoặc chứng từ.
+5. Phản hồi không được cache (`Cache-Control: private, no-store, max-age=0`).
 
 ## 8. Thông tin cần bên làm AI nhận
 
-Có thể gửi tài liệu này để mô tả cấu trúc và semantics. Sau khi phiên bản API được deploy, chuyển URL endpoint và bearer token cho bot qua khu vực secrets của dịch vụ tích hợp. Không ghi token vào repo, prompt công khai hay URL query.
+Có thể gửi tài liệu này để mô tả cấu trúc và semantics. Sau khi phiên bản API được deploy, chuyển URL endpoint cho bot. Endpoint công khai nên không cần token, mật khẩu, cookie hay khóa Supabase.

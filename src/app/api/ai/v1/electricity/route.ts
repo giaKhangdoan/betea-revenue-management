@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { addDays, currentBusinessDate } from "@/lib/finance/format";
 import { calculateDailyElectricityUsage } from "@/lib/finance/calculations";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -26,19 +25,6 @@ function isDateOnly(value: string | null): value is string {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function matchesIntegrationToken(request: Request) {
-  const configuredToken = process.env.BETEA_ELECTRICITY_API_TOKEN?.trim();
-  if (!configuredToken || configuredToken.length < 32) return "not-configured" as const;
-
-  const authorization = request.headers.get("authorization") ?? "";
-  const match = /^Bearer ([^\s]+)$/i.exec(authorization);
-  if (!match || match[1].length > 256) return "invalid" as const;
-
-  const providedDigest = createHash("sha256").update(match[1]).digest();
-  const configuredDigest = createHash("sha256").update(configuredToken).digest();
-  return timingSafeEqual(providedDigest, configuredDigest) ? "valid" as const : "invalid" as const;
-}
-
 function meterValue(value: MeterRow["electricity_morning_kwh"]): number | null {
   if (value === null) return null;
   const parsed = Number(value);
@@ -47,31 +33,17 @@ function meterValue(value: MeterRow["electricity_morning_kwh"]): number | null {
 
 function requestedRange(request: Request) {
   const params = new URL(request.url).searchParams;
-  const date = params.get("date");
-  const from = params.get("from");
-  const to = params.get("to");
+  const fromDate = params.get("fromDate");
+  const toDate = params.get("toDate");
 
-  if (date !== null) {
-    if (from !== null || to !== null || !isDateOnly(date)) return null;
-    return { from: date, to: date };
-  }
-
-  if (!isDateOnly(from) || !isDateOnly(to)) return null;
-  return { from, to };
+  if (!isDateOnly(fromDate) || !isDateOnly(toDate)) return null;
+  return { from: fromDate, to: toDate };
 }
 
 export async function GET(request: Request) {
-  const tokenStatus = matchesIntegrationToken(request);
-  if (tokenStatus === "not-configured") {
-    return response({ error: "Electricity API is not configured." }, 503);
-  }
-  if (tokenStatus === "invalid") {
-    return response({ error: "Unauthorized." }, 401);
-  }
-
   const range = requestedRange(request);
   if (!range) {
-    return response({ error: "Provide date=YYYY-MM-DD or both from=YYYY-MM-DD and to=YYYY-MM-DD." }, 400);
+    return response({ error: "Provide both fromDate=YYYY-MM-DD and toDate=YYYY-MM-DD. For one day, use the same date for both." }, 400);
   }
 
   const today = currentBusinessDate();
@@ -141,8 +113,8 @@ export async function GET(request: Request) {
   return response({
     timezone: "Asia/Ho_Chi_Minh",
     unit: "kWh",
-    from: range.from,
-    to: range.to,
+    fromDate: range.from,
+    toDate: range.to,
     generatedAt: new Date().toISOString(),
     items,
   });
