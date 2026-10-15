@@ -662,6 +662,27 @@ button { color: inherit; }
 .staff-amount-cell { display: grid; gap: 6px; align-content: start; }
 .staff-inline-delete { justify-self: start; }
 .staff-order-box { display: grid; gap: 10px; border: 1px solid var(--line); background: #fcfdfc; padding: 13px; }
+.electricity-period-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); align-items: start; gap: 16px; }
+.electricity-period-grid > *, .electricity-period-form, .electricity-settings-form { min-width: 0; }
+.electricity-period-form { gap: 14px; border-radius: 6px; background: #fff; padding: 16px; }
+.electricity-period-form .section-heading { margin-bottom: 0; }
+.electricity-period-form .section-heading > div { min-width: 0; }
+.electricity-period-form .section-heading h4 { margin: 0; font-size: 13px; font-weight: 620; }
+.electricity-period-form .field, .electricity-settings-form .field, .electricity-period-form .input-suffix { min-width: 0; max-width: 100%; }
+.electricity-period-form .field > span, .electricity-settings-form .field > span { font-size: 13px; }
+.electricity-period-form .field input, .electricity-period-form .field select, .electricity-period-form .field textarea,
+.electricity-settings-form .field input, .electricity-settings-form .field select { min-width: 0; max-width: 100%; }
+.electricity-device-list { display: grid; gap: 12px; min-width: 0; }
+.electricity-device-card { display: grid; align-content: start; gap: 12px; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfb; padding: 14px; }
+.electricity-device-heading { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.electricity-device-heading strong { font-size: 14px; font-weight: 620; line-height: 1.45; }
+.electricity-device-heading small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.electricity-reading-grid, .electricity-time-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); align-items: start; gap: 12px; }
+.electricity-time-grid > .inventory-checkbox { grid-column: 1 / -1; }
+.electricity-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 12px; }
+.electricity-device-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.electricity-device-row > div { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.electricity-device-row > div > span { color: var(--muted); font-size: 12px; }
 .staff-order-current { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .staff-order-current span { color: var(--muted); font-size: 11px; }
 .staff-order-current strong { font-size: 20px; font-weight: 650; }

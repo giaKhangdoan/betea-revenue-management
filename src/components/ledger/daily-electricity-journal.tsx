@@ -198,7 +198,7 @@ function ElectricityPeriodForm({
   const canEdit = !loadError && savingCount === 0;
   const legacyReadingNeedsReview = status === "" && initialStatus == null && initialKwh != null;
 
-  return <form className="staff-single-form" action={action}>
+  return <form className="staff-single-form electricity-period-form" action={action}>
     <input type="hidden" name="business_date" value={date} />
     <input type="hidden" name="period" value={period} />
     <input type="hidden" name="reset_reason" value={resetReason} />
@@ -219,7 +219,7 @@ function ElectricityPeriodForm({
       if (next !== "recorded") { setRecordedAt(""); setMeterKwh(""); }
       if (next !== "unable") setUnavailableReason("");
     }}><option value="">Chưa ghi</option><option value="recorded">Đã ghi</option><option value="unable">Không ghi nhận được</option></select></label>
-    {status === "recorded" ? <div className="staff-shift-grid">
+    {status === "recorded" ? <div className="electricity-reading-grid">
       <label className="field"><span>Giờ ghi chỉ số</span><input name="recorded_at" type="time" value={recordedAt} onChange={(event) => { setRecordedAt(event.currentTarget.value); setMeterFieldsTouched(true); }} required disabled={!canEdit} /></label>
       <label className="field"><span>Chỉ số công tơ</span><span className="input-suffix"><input name="meter_kwh" type="number" min="0" step="0.001" inputMode="decimal" placeholder="Ví dụ: 15230.5" value={meterKwh} onChange={(event) => { setMeterKwh(event.currentTarget.value); setMeterFieldsTouched(true); }} required disabled={!canEdit} /><span>kWh</span></span></label>
     </div> : null}
@@ -229,15 +229,15 @@ function ElectricityPeriodForm({
 
     <section className="staff-entry-group">
       <div className="section-heading"><div><h4>Thiết bị trong {period === "morning" ? "ca sáng" : "ca tối"}</h4><p>{period === "morning" ? "Ghi thiết bị còn chạy từ đêm trước và hoạt động trong ca." : "Ghi thời gian hoạt động và thiết bị còn chạy sau khi đóng cửa."}</p></div></div>
-      {activeDevices.length === 0 ? <p className="form-note">Chưa có thiết bị đang theo dõi. Thêm thiết bị trong mục quản lý phía dưới.</p> : <div className="staff-shift-grid">{activeDevices.map((device) => {
+      {activeDevices.length === 0 ? <p className="form-note">Chưa có thiết bị đang theo dõi. Thêm thiết bị trong mục quản lý phía dưới.</p> : <div className="electricity-device-list">{activeDevices.map((device) => {
         const input = deviceInputs[device.id];
         const saved = logMap.get(device.id);
         const effectiveName = saved?.device_name_snapshot ?? device.name;
         const effectiveMode = saved?.device_mode_snapshot ?? device.mode;
-        return <div className="staff-order-box" key={device.id}>
-          <div className="section-heading"><div><strong>{effectiveName}</strong><small>{effectiveMode === "timed" ? "Theo dõi giờ bật và tắt" : "Thiết bị chạy liên tục"}{saved && saved.device_name_snapshot !== device.name ? ` · tên danh mục hiện tại: ${device.name}` : ""}</small></div></div>
-          <label className="field"><span>Tình trạng</span><select value={input?.operating_status ?? "unrecorded"} disabled={!canEdit} onChange={(event) => updateDevice(device.id, { operating_status: event.currentTarget.value as DeviceInput["operating_status"] })}><option value="unrecorded">Chưa ghi</option><option value="not_running">Không hoạt động</option><option value="running">Có hoạt động</option></select></label>
-          {effectiveMode === "timed" && input?.operating_status === "running" ? <div className="staff-shift-grid">
+        return <div className="electricity-device-card" key={device.id} role="group" aria-label={effectiveName}>
+          <div className="electricity-device-heading"><strong>{effectiveName}</strong><small>{effectiveMode === "timed" ? "Theo dõi giờ bật và tắt" : "Thiết bị chạy liên tục"}{saved && saved.device_name_snapshot !== device.name ? ` · tên danh mục hiện tại: ${device.name}` : ""}</small></div>
+          <label className="field"><span>Trạng thái thiết bị</span><select value={input?.operating_status ?? "unrecorded"} disabled={!canEdit} onChange={(event) => updateDevice(device.id, { operating_status: event.currentTarget.value as DeviceInput["operating_status"] })}><option value="unrecorded">Chưa ghi</option><option value="not_running">Không hoạt động</option><option value="running">Có hoạt động</option></select></label>
+          {effectiveMode === "timed" && input?.operating_status === "running" ? <div className="electricity-time-grid">
             <label className="field"><span>Giờ bật</span><input type="time" value={input.started_at} required disabled={!canEdit} onChange={(event) => updateDevice(device.id, { started_at: event.currentTarget.value })} /></label>
             <label className="field"><span>Giờ tắt</span><input type="time" value={input.ended_at} required disabled={!canEdit} onChange={(event) => updateDevice(device.id, { ended_at: event.currentTarget.value })} /></label>
             {period === "evening" ? <label className="inventory-checkbox"><input type="checkbox" checked={input.ends_next_day} disabled={!canEdit} onChange={(event) => updateDevice(device.id, { ends_next_day: event.currentTarget.checked })} /><span>Giờ tắt sang ngày hôm sau</span></label> : null}
@@ -261,10 +261,10 @@ function ElectricityPeriodForm({
 
 function ElectricityDeviceForm({ device, date, disabled = false }: { device: OwnerElectricityDevice | null; date: string; disabled?: boolean }) {
   const [state, action, pending] = useActionState<EntryActionState, FormData>(saveOwnerElectricityDeviceAction, undefined);
-  return <form className="staff-single-form" action={action}>
+  return <form className="staff-single-form electricity-settings-form" action={action}>
     <input type="hidden" name="business_date" value={date} />
     <input type="hidden" name="device_id" value={device?.id ?? ""} />
-    <div className="staff-shift-grid">
+    <div className="electricity-settings-grid">
       <label className="field"><span>Tên thiết bị</span><input name="name" defaultValue={device?.name ?? ""} required minLength={2} maxLength={80} placeholder="Ví dụ: Quạt trần" disabled={disabled} /></label>
       <label className="field"><span>Cách theo dõi</span><select name="mode" defaultValue={device?.mode ?? "timed"} disabled={disabled}><option value="timed">Ghi giờ bật và tắt</option><option value="continuous">Chạy liên tục</option></select></label>
       <label className="field"><span>Thứ tự hiển thị</span><input name="sort_order" type="number" min="0" step="1" defaultValue={device?.sort_order ?? 40} inputMode="numeric" disabled={disabled} /></label>
@@ -304,7 +304,7 @@ export function DailyElectricityJournal({ date, record, nextMorningKwh, devices,
     {loadError ? <p className="form-error" role="alert">Chưa tải được dữ liệu nhật ký điện hoặc danh mục thiết bị. Doanh thu vẫn có thể lưu; tải lại trang rồi thử lưu phần điện.</p> : null}
     <div className="electricity-daily-summary"><div className="section-heading"><div><h3>Mức dùng điện trong ngày</h3><p>{statusCopy}</p></div></div><div className="electricity-grid"><div><span>Chỉ số ca sáng</span><strong>{formatKwh(morningKwh)}</strong></div><div><span>Chỉ số ca tối</span><strong>{formatKwh(eveningKwh)}</strong></div><div><span>Sáng ngày kế tiếp</span><strong>{formatKwh(nextMorningKwh)}</strong></div></div></div>
     <label className="field electricity-reset-reason"><span>Lý do thay hoặc reset công tơ <small>(bắt buộc nếu chỉ số giảm so với lần ghi trước)</small></span><input value={resetReason} maxLength={240} onChange={(event) => { setResetReason(event.currentTarget.value); setResetReasonTouched(true); }} placeholder="Ví dụ: đã thay công tơ ngày…" disabled={loadError || savingCount > 0} /><small>Lý do hiện có được điền sẵn. Xóa nếu đã nhập nhầm và ngày này không còn lần ghi giảm; nội dung được lưu khi lưu một trong hai ca.</small></label>
-    <div className="staff-shift-grid">
+    <div className="electricity-period-grid">
       <section className="staff-entry-group"><ElectricityPeriodForm date={date} period="morning" record={values} devices={devices} savedLogs={deviceLogs.filter((log) => log.period === "morning")} resetReason={resetReason} resetReasonTouched={resetReasonTouched} setResetReasonTouched={setResetReasonTouched} savingCount={savingCount} onSavePendingChange={onSavePendingChange} isHistorical={isHistorical} loadError={loadError} /></section>
       <section className="staff-entry-group"><ElectricityPeriodForm date={date} period="evening" record={values} devices={devices} savedLogs={deviceLogs.filter((log) => log.period === "evening")} resetReason={resetReason} resetReasonTouched={resetReasonTouched} setResetReasonTouched={setResetReasonTouched} savingCount={savingCount} onSavePendingChange={onSavePendingChange} isHistorical={isHistorical} loadError={loadError} /></section>
     </div>
