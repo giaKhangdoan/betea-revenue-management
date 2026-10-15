@@ -10,13 +10,15 @@ type Photo = {
   id: string;
   category: string;
   shift_code: string | null;
+  electricity_period: ElectricityPeriod | null;
   object_path: string;
   storage_provider: "supabase" | "r2" | null;
   caption: string | null;
   signed_url: string;
 };
 
-type UploadMetadata = { category: string; shiftCode: string; caption: string };
+type UploadMetadata = { category: string; shiftCode: string; electricityPeriod: string; caption: string };
+type ElectricityPeriod = "morning" | "evening";
 type UploadStatus = "queued" | "preparing" | "uploading" | "saving" | "saved" | "failed";
 type UploadItem = {
   id: string;
@@ -46,7 +48,29 @@ const categoryLabels: Record<string, string> = {
   cleaning: "Vệ sinh",
   arrangement: "Sắp xếp",
   other: "Khác",
+  electricity_meter: "Ảnh công tơ",
 };
+
+const electricityPeriodLabels: Record<ElectricityPeriod, string> = {
+  morning: "Kỳ sáng",
+  evening: "Kỳ tối",
+};
+
+function photoContextLabel(category: string, shiftCode: string | null, electricityPeriod?: ElectricityPeriod | null) {
+  if (category === "electricity_meter") {
+    return electricityPeriod ? electricityPeriodLabels[electricityPeriod] : "Chưa gắn kỳ";
+  }
+  return shiftCode ? `Ca ${shiftCode.replace("-", ":00–")}:00` : "Cả ngày";
+}
+
+function photoDescription(category: string, shiftCode: string | null, electricityPeriod?: ElectricityPeriod | null, caption?: string | null) {
+  const details = [photoContextLabel(category, shiftCode, electricityPeriod), caption?.trim()].filter(Boolean);
+  return `${categoryLabels[category] ?? "Ảnh"} · ${details.join(" · ")}`;
+}
+
+function normalizeElectricityPeriod(value: string): ElectricityPeriod | null {
+  return value === "morning" || value === "evening" ? value : null;
+}
 
 const statusLabels: Record<UploadStatus, string> = {
   queued: "Đang chờ tải lên",
@@ -66,6 +90,7 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [category, setCategory] = useState("bluebook");
   const [shiftCode, setShiftCode] = useState("");
+  const [electricityPeriod, setElectricityPeriod] = useState("");
   const [caption, setCaption] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -248,7 +273,14 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
     if (!uploadResponse.ok) throw new Error("Tải ảnh lên R2 thất bại. Hãy thử lại; ứng dụng sẽ dùng lại cùng đường dẫn ảnh.");
 
     updateUploadItem(id, { status: "saving" });
-    const result = await addDayPhotoRecord({ date, category: metadata.category, shiftCode: metadata.shiftCode, objectPath, caption: metadata.caption });
+    const result = await addDayPhotoRecord({
+      date,
+      category: metadata.category,
+      shiftCode: metadata.shiftCode,
+      electricityPeriod: metadata.electricityPeriod,
+      objectPath,
+      caption: metadata.caption,
+    });
     if (!result.error) {
       updateUploadItem(id, { status: "saved", message: undefined, retryable: false });
       return;
@@ -279,7 +311,12 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
     setBusy(true);
     setMessage("");
     try {
-      const currentMetadata: UploadMetadata = { category, shiftCode, caption: caption.trim() };
+      const currentMetadata: UploadMetadata = {
+        category,
+        shiftCode: category === "electricity_meter" ? "" : shiftCode,
+        electricityPeriod: category === "electricity_meter" ? electricityPeriod : "",
+        caption: caption.trim(),
+      };
       for (const id of ids) {
         const item = uploadItemsRef.current.find((candidate) => candidate.id === id);
         if (!item || item.status === "saved") continue;
@@ -318,9 +355,16 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
 
   function uploadSelected(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const ids = uploadItemsRef.current
-      .filter((item) => item.status === "queued" || (item.status === "failed" && item.retryable))
-      .map((item) => item.id);
+    const selectedItems = uploadItemsRef.current.filter((item) => item.status === "queued" || (item.status === "failed" && item.retryable));
+    const missingElectricityPeriod = selectedItems.some((item) => {
+      const metadata = item.metadata ?? { category, electricityPeriod };
+      return metadata.category === "electricity_meter" && !metadata.electricityPeriod;
+    });
+    if (missingElectricityPeriod) {
+      setMessage("Chọn kỳ sáng hoặc kỳ tối cho ảnh công tơ trước khi tải lên.");
+      return;
+    }
+    const ids = selectedItems.map((item) => item.id);
     if (ids.length === 0) {
       setMessage("Chọn ảnh cần tải lên trước.");
       return;
@@ -367,12 +411,16 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
 
   return (
     <section className="surface photo-card">
-      <div className="section-heading"><div><h2>Ảnh xác nhận</h2><p>Bluebook, vệ sinh và sắp xếp · ảnh sẽ được nén còn khoảng 2 MB</p></div><strong>{savedPhotos.length} ảnh đã lưu</strong></div>
+      <div className="section-heading"><div><h2>Ảnh xác nhận</h2><p>Bluebook, vệ sinh, sắp xếp và ảnh công tơ · ảnh sẽ được nén còn khoảng 2 MB</p></div><strong>{savedPhotos.length} ảnh đã lưu</strong></div>
       <form className="photo-form" onSubmit={uploadSelected}>
-        <label className="field"><span>Loại ảnh</span><select value={category} onChange={(event) => setCategory(event.target.value)} disabled={busy || !canUpload}><option value="bluebook">Bluebook</option><option value="cleaning">Vệ sinh</option><option value="arrangement">Sắp xếp</option><option value="other">Khác</option></select></label>
-        <label className="field"><span>Gắn với ca (không bắt buộc)</span><select value={shiftCode} onChange={(event) => setShiftCode(event.target.value)} disabled={busy || !canUpload}><option value="">Cả ngày</option><option value="06-10">Ca 06:00–10:00</option><option value="10-14">Ca 10:00–14:00</option><option value="14-18">Ca 14:00–18:00</option><option value="18-22">Ca 18:00–22:00</option></select></label>
+        <label className="field"><span>Loại ảnh</span><select value={category} onChange={(event) => { const nextCategory = event.target.value; setCategory(nextCategory); setElectricityPeriod(""); if (nextCategory === "electricity_meter") setShiftCode(""); }} disabled={busy || !canUpload}><option value="bluebook">Bluebook</option><option value="cleaning">Vệ sinh</option><option value="arrangement">Sắp xếp</option><option value="other">Khác</option><option value="electricity_meter">Ảnh công tơ</option></select></label>
+        {category === "electricity_meter" ? (
+          <label className="field"><span>Kỳ ghi công tơ</span><select value={electricityPeriod} onChange={(event) => setElectricityPeriod(event.target.value)} disabled={busy || !canUpload} required><option value="">Chọn kỳ</option><option value="morning">Ca sáng</option><option value="evening">Ca tối</option></select></label>
+        ) : (
+          <label className="field"><span>Gắn với ca (không bắt buộc)</span><select value={shiftCode} onChange={(event) => setShiftCode(event.target.value)} disabled={busy || !canUpload}><option value="">Cả ngày</option><option value="06-10">Ca 06:00–10:00</option><option value="10-14">Ca 10:00–14:00</option><option value="14-18">Ca 14:00–18:00</option><option value="18-22">Ca 18:00–22:00</option></select></label>
+        )}
         <label className="field"><span>Ghi chú cho ảnh (không bắt buộc)</span><input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={240} placeholder="Ví dụ: ảnh bàn giao ca tối" disabled={busy || !canUpload} /></label>
-        <div className="field"><span>Ảnh cần lưu</span><div className="photo-picker"><input className="visually-hidden" id={`photo-files-${date}`} ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={selectFiles} disabled={busy || !canUpload} aria-label="Chọn ảnh JPEG, PNG hoặc WebP" /><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()} disabled={busy || !canUpload}>Chọn ảnh từ thiết bị</button><span className="photo-picker-note">Có thể chọn nhiều ảnh · JPEG, PNG hoặc WebP</span></div><p className="form-note">Loại ảnh, ca và ghi chú bên trên sẽ áp dụng cho tất cả ảnh đã chọn.</p></div>
+        <div className="field"><span>Ảnh cần lưu</span><div className="photo-picker"><input className="visually-hidden" id={`photo-files-${date}`} ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={selectFiles} disabled={busy || !canUpload} aria-label="Chọn ảnh JPEG, PNG hoặc WebP" /><button className="button button-secondary" type="button" onClick={() => fileRef.current?.click()} disabled={busy || !canUpload}>Chọn ảnh từ thiết bị</button><span className="photo-picker-note">Có thể chọn nhiều ảnh · JPEG, PNG hoặc WebP</span></div><p className="form-note">Loại ảnh, ca hoặc kỳ công tơ và ghi chú bên trên sẽ áp dụng cho tất cả ảnh đã chọn.</p></div>
         {uploadItems.length > 0 ? <p className="photo-selection-summary" aria-live="polite">{uploadItems.length} ảnh trong danh sách · xem trước từng ảnh, bỏ ảnh chọn nhầm rồi mới lưu.</p> : <p className="form-note" aria-live="polite">Chưa chọn ảnh.</p>}
         {message ? <p className={message.startsWith("Đã") ? "form-success" : "form-error"} role="status">{message}</p> : null}
         <button className="button" type="submit" disabled={!canUpload || busy || !hasRetryableItems}>{busy ? "Đang lưu ảnh…" : retryableCount > 0 ? `Lưu ${retryableCount} ảnh` : canUpload ? "Chọn ảnh trước khi lưu" : "Chỉ xem ảnh"}</button>
@@ -380,15 +428,23 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
 
       {uploadItems.length > 0 ? (
         <div className="photo-grid" role="list" aria-label="Ảnh đang tải lên">
-          {uploadItems.map((item) => (
+          {uploadItems.map((item) => {
+            const metadata = item.metadata ?? {
+              category,
+              shiftCode: category === "electricity_meter" ? "" : shiftCode,
+              electricityPeriod: category === "electricity_meter" ? electricityPeriod : "",
+              caption: caption.trim(),
+            };
+            const period = normalizeElectricityPeriod(metadata.electricityPeriod);
+            return (
             <article className="photo-item" key={item.id} role="listitem" aria-label={`Ảnh tải lên: ${item.sourceFile.name}`}>
-              <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ url: item.previewUrl, title: item.sourceFile.name, detail: `${categoryLabels[category] ?? "Ảnh"}${shiftCode ? ` · Ca ${shiftCode.replace("-", ":00–")}:00` : " · Cả ngày"}${caption.trim() ? ` · ${caption.trim()}` : ""}` })} aria-label={`Xem ảnh lớn: ${item.sourceFile.name}`}>
+              <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ url: item.previewUrl, title: item.sourceFile.name, detail: photoDescription(metadata.category, metadata.shiftCode, period, metadata.caption) })} aria-label={`Xem ảnh lớn: ${item.sourceFile.name}`}>
                 <Image src={item.previewUrl} alt={`Xem trước ${item.sourceFile.name}`} width={600} height={450} unoptimized />
               </button>
               <div className="photo-meta"><div>
                 <strong>{item.sourceFile.name}</strong>
-                <span>{categoryLabels[category] ?? "Ảnh"} · {shiftCode ? `Ca ${shiftCode.replace("-", ":00–")}:00` : "Cả ngày"}</span>
-                {caption.trim() ? <span>{caption.trim()}</span> : null}
+                <span>{categoryLabels[metadata.category] ?? "Ảnh"} · {photoContextLabel(metadata.category, metadata.shiftCode, period)}</span>
+                {metadata.caption ? <span>{metadata.caption}</span> : null}
                 <span role="status">{statusLabels[item.status]}</span>
                 {item.message ? <span className="form-error">{item.message}</span> : null}
                 {item.status === "preparing" || item.status === "uploading" || item.status === "saving" ? (
@@ -396,21 +452,22 @@ export function PhotoManager({ date, initialPhotos, ownerId, canDelete = true, c
                 ) : item.status === "saved" ? (
                   <progress max={100} value={100} aria-label={`Đã tải xong ${item.sourceFile.name}`} />
                 ) : null}
-              </div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ url: item.previewUrl, title: item.sourceFile.name, detail: `${categoryLabels[category] ?? "Ảnh"}${shiftCode ? ` · Ca ${shiftCode.replace("-", ":00–")}:00` : " · Cả ngày"}${caption.trim() ? ` · ${caption.trim()}` : ""}` })}>Xem ảnh</button>
+              </div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ url: item.previewUrl, title: item.sourceFile.name, detail: photoDescription(metadata.category, metadata.shiftCode, period, metadata.caption) })}>Xem ảnh</button>
                 {item.status === "failed" && item.retryable ? <button className="text-button" type="button" onClick={() => retryOne(item.id)} disabled={busy} aria-label={`Thử lại ảnh ${item.sourceFile.name}`}>Thử lại</button> : null}
                 {(item.status === "queued" || (item.status === "failed" && !item.retryable && !item.objectPath)) ? <button className="text-button" type="button" onClick={() => discardQueuedItem(item.id)} disabled={busy} aria-label={`Bỏ ảnh ${item.sourceFile.name} khỏi danh sách`}>Bỏ ảnh</button> : null}
               </div></div>
             </article>
-          ))}
+          );
+          })}
         </div>
       ) : null}
 
-      {savedPhotos.length === 0 && uploadItems.length === 0 ? <div className="photo-empty-state"><strong>Chưa có ảnh lưu cho ngày này</strong><p>Chọn Bluebook, ảnh vệ sinh hoặc sắp xếp. Ảnh sẽ hiện ở đây sau khi lưu.</p></div> : savedPhotos.length > 0 ? (
+      {savedPhotos.length === 0 && uploadItems.length === 0 ? <div className="photo-empty-state"><strong>Chưa có ảnh lưu cho ngày này</strong><p>Chọn Bluebook, ảnh vệ sinh, sắp xếp hoặc ảnh công tơ. Ảnh sẽ hiện ở đây sau khi lưu.</p></div> : savedPhotos.length > 0 ? (
         <div className="photo-grid">
           {savedPhotos.map((photo) => <article className="photo-item" key={photo.id}>
             {/* Signed URLs expire quickly; the database stores only the private object path. */}
-            <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ photoId: photo.id, url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })} aria-label={`Xem ảnh lớn: ${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `, ${photo.caption}` : ""}`}><Image src={photo.signed_url} alt={`${categoryLabels[photo.category] ?? "Ảnh"}${photo.caption ? `: ${photo.caption}` : ""}`} width={600} height={450} loading="lazy" onError={() => void renewPhotoUrl(photo)} unoptimized /></button>
-            <div className="photo-meta"><div><strong>{categoryLabels[photo.category] ?? "Ảnh"}</strong><span>{photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}</span>{photo.caption ? <span>{photo.caption}</span> : null}</div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ photoId: photo.id, url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: `${photo.shift_code ? `Ca ${photo.shift_code.replace("-", ":00–")}:00` : "Cả ngày"}${photo.caption ? ` · ${photo.caption}` : ""}` })}>Xem ảnh</button>{canDelete ? <button className="text-button text-button-danger" type="button" onClick={() => removePhoto(photo.id)} disabled={busy}>Xóa ảnh</button> : null}</div></div>
+            <button className="photo-preview-button" type="button" onClick={() => setActivePhoto({ photoId: photo.id, url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: photoDescription(photo.category, photo.shift_code, photo.electricity_period, photo.caption) })} aria-label={`Xem ảnh lớn: ${categoryLabels[photo.category] ?? "Ảnh"}${photo.electricity_period ? `, ${electricityPeriodLabels[photo.electricity_period]}` : ""}${photo.caption ? `, ${photo.caption}` : ""}`}><Image src={photo.signed_url} alt={`${categoryLabels[photo.category] ?? "Ảnh"}${photo.electricity_period ? ` ${electricityPeriodLabels[photo.electricity_period]}` : ""}${photo.caption ? `: ${photo.caption}` : ""}`} width={600} height={450} loading="lazy" onError={() => void renewPhotoUrl(photo)} unoptimized /></button>
+            <div className="photo-meta"><div><strong>{categoryLabels[photo.category] ?? "Ảnh"}</strong><span>{photoContextLabel(photo.category, photo.shift_code, photo.electricity_period)}</span>{photo.caption ? <span>{photo.caption}</span> : null}</div><div className="photo-actions"><button className="text-button" type="button" onClick={() => setActivePhoto({ photoId: photo.id, url: photo.signed_url, title: categoryLabels[photo.category] ?? "Ảnh", detail: photoDescription(photo.category, photo.shift_code, photo.electricity_period, photo.caption) })}>Xem ảnh</button>{canDelete ? <button className="text-button text-button-danger" type="button" onClick={() => removePhoto(photo.id)} disabled={busy}>Xóa ảnh</button> : null}</div></div>
           </article>)}
         </div>
       ) : null}

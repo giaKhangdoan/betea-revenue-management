@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { saveDailyRecord, type EntryActionState } from "@/app/(private)/ledger/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
 import { formatVnd } from "@/lib/finance/format";
-import { calculateDailyElectricityUsage } from "@/lib/finance/calculations";
+import { DailyElectricityJournal, type OwnerElectricityDevice, type OwnerElectricityDeviceLog } from "@/components/ledger/daily-electricity-journal";
 
 type DailyRecord = {
   business_status?: string | null;
@@ -24,6 +24,17 @@ type DailyRecord = {
   reconciliation_difference_vnd?: number | null;
   reconciliation_note?: string | null;
   electricity_reset_reason?: string | null;
+  electricity_morning_status?: "recorded" | "unable" | null;
+  electricity_morning_recorded_at?: string | null;
+  electricity_morning_unavailable_reason?: string | null;
+  electricity_morning_note?: string | null;
+  electricity_evening_status?: "recorded" | "unable" | null;
+  electricity_evening_recorded_at?: string | null;
+  electricity_evening_unavailable_reason?: string | null;
+  electricity_evening_note?: string | null;
+  electricity_evening_turned_off_unneeded?: boolean | null;
+  electricity_evening_checked_cooler_doors?: boolean | null;
+  electricity_evening_meter_photo_confirmed?: boolean | null;
 };
 
 const fields = [
@@ -37,13 +48,19 @@ const fields = [
 const shiftFields = fields.slice(0, 4);
 const deliveryFields = fields.slice(4);
 
-export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string; record: DailyRecord | null; nextMorningKwh: number | null }) {
+export function DailyEntryForm({ date, record, nextMorningKwh, devices = [], deviceLogs = [], electricityLoadError = false, isHistorical = false }: {
+  date: string;
+  record: DailyRecord | null;
+  nextMorningKwh: number | null;
+  devices?: OwnerElectricityDevice[];
+  deviceLogs?: OwnerElectricityDeviceLog[];
+  electricityLoadError?: boolean;
+  isHistorical?: boolean;
+}) {
   const [state, formAction, pending] = useActionState<EntryActionState, FormData>(saveDailyRecord, undefined);
   const [businessStatus, setBusinessStatus] = useState(record?.business_status ?? "open");
   const [reconciliationStatus, setReconciliationStatus] = useState(record?.reconciliation_status ?? "unreconciled");
   const [bluebookTotalValue, setBluebookTotalValue] = useState(record?.bluebook_total_vnd == null ? "" : new Intl.NumberFormat("vi-VN").format(record.bluebook_total_vnd));
-  const [morningMeterValue, setMorningMeterValue] = useState(record?.electricity_morning_kwh == null ? "" : String(record.electricity_morning_kwh));
-  const [eveningMeterValue, setEveningMeterValue] = useState(record?.electricity_evening_kwh == null ? "" : String(record.electricity_evening_kwh));
   const [salesValues, setSalesValues] = useState<Record<string, string>>(() => Object.fromEntries(
     fields.map((field) => [field.name, record?.[field.name] == null ? "" : new Intl.NumberFormat("vi-VN").format(record[field.name]!)]),
   ));
@@ -65,15 +82,9 @@ export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string;
   const liveBluebookDifference = revenueIsComplete && parsedBluebookTotal !== null && Number.isSafeInteger(parsedBluebookTotal)
     ? parsedBluebookTotal - shownRevenue
     : null;
-  const parseMeter = (value: string) => value.trim() === "" ? null : Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
-  const dailyElectricity = calculateDailyElectricityUsage({
-    morningKwh: parseMeter(morningMeterValue),
-    eveningKwh: parseMeter(eveningMeterValue),
-    nextMorningKwh,
-  });
-  const showKwh = (value: number | null) => value === null ? "Chưa đủ chỉ số" : `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(value)} kWh`;
 
   return (
+    <>
     <form action={formAction} className="entry-form surface">
       <div className="section-heading">
         <div><h2>Doanh thu trong ngày</h2><p>Nhập doanh thu cuối cùng của bốn ca; Grab/Shopee chỉ nhập khi có phát sinh.</p></div>
@@ -143,21 +154,9 @@ export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string;
         </select>
       </div>
       <div className="entry-grid entry-support-grid">
-        <label className="field"><span>Chỉ số điện · ca sáng</span><span className="input-suffix"><input name="electricity_morning_kwh" type="number" min="0" step="0.001" inputMode="decimal" placeholder="Nhập số công tơ" value={morningMeterValue} onChange={(event) => setMorningMeterValue(event.currentTarget.value)} /><span>kWh</span></span></label>
-        <label className="field"><span>Chỉ số điện · ca tối</span><span className="input-suffix"><input name="electricity_evening_kwh" type="number" min="0" step="0.001" inputMode="decimal" placeholder="Nhập số công tơ" value={eveningMeterValue} onChange={(event) => setEveningMeterValue(event.currentTarget.value)} /><span>kWh</span></span></label>
         <label className="field"><span>Đã vệ sinh</span><select name="cleaning_done" defaultValue={record?.cleaning_done == null ? "" : record.cleaning_done ? "yes" : "no"}><option value="">Chưa xác nhận</option><option value="yes">Đã vệ sinh</option><option value="no">Chưa vệ sinh</option></select></label>
         <label className="field"><span>Đã sắp xếp</span><select name="arrangement_done" defaultValue={record?.arrangement_done == null ? "" : record.arrangement_done ? "yes" : "no"}><option value="">Chưa xác nhận</option><option value="yes">Đã sắp xếp</option><option value="no">Chưa sắp xếp</option></select></label>
       </div>
-      <section className="electricity-daily-summary" aria-live="polite" aria-label="Tổng hợp điện trong ngày">
-        <div className="section-heading"><div><h3>Điện dùng trong ngày</h3><p>Hệ thống tính thêm phần thiết bị chạy qua đêm theo chỉ số sáng hôm sau.</p></div></div>
-        <div className="electricity-grid">
-          <div><span>Trong ca · sáng đến tối</span><strong>{showKwh(dailyElectricity.shiftKwh)}</strong></div>
-          <div><span>Qua đêm · tối đến sáng hôm sau</span><strong>{showKwh(dailyElectricity.overnightKwh)}</strong></div>
-          <div><span>Tổng 24 giờ · sáng nay đến sáng mai</span><strong>{showKwh(dailyElectricity.fullDayKwh)}</strong></div>
-        </div>
-        {dailyElectricity.status === "meter_decrease" ? <p className="form-error">Có chỉ số giảm giữa các lần ghi. Kiểm tra số công tơ hoặc lý do reset; phần giảm chưa được tính là điện tiêu thụ.</p> : dailyElectricity.overnightKwh === null ? <p className="form-note">Nhập chỉ số ca tối ngày này và chỉ số ca sáng ngày mai để xem đủ mức dùng 24 giờ.</p> : null}
-      </section>
-      <label className="field"><span>Lý do nếu chỉ số điện giảm hoặc reset</span><input name="electricity_reset_reason" type="text" maxLength={240} placeholder="Chỉ cần nhập khi chỉ số thấp hơn lần ghi trước" defaultValue={record?.electricity_reset_reason ?? ""} /><small className="field-helper">Nếu công tơ được thay hoặc reset, hệ thống sẽ yêu cầu ghi lý do và không dùng phép trừ đơn giản để ước tính điện tháng đó.</small></label>
       <section className="reconciliation-section" aria-labelledby="reconciliation-heading">
         <div className="section-heading"><div><h3 id="reconciliation-heading">Đối soát với Bluebook</h3><p>Ghi riêng kết quả kiểm tra so với tổng doanh thu trên website.</p></div></div>
           <label className="field"><span>Trạng thái đối soát</span><select name="reconciliation_status" value={reconciliationStatus} onChange={(event) => setReconciliationStatus(event.currentTarget.value)}><option value="unreconciled">Chưa đối chiếu</option><option value="pending">Chờ kiểm tra</option><option value="matched">Khớp</option><option value="discrepancy">Lệch</option></select></label>
@@ -172,5 +171,7 @@ export function DailyEntryForm({ date, record, nextMorningKwh }: { date: string;
       <ActionMessage error={state?.error} success={state?.success} />
       <div className="form-actions"><button className="button" type="submit" disabled={pending}>{pending ? "Đang lưu…" : "Lưu doanh thu ngày"}</button></div>
     </form>
+    <DailyElectricityJournal date={date} record={record} nextMorningKwh={nextMorningKwh} devices={devices} deviceLogs={deviceLogs} loadError={electricityLoadError} isHistorical={isHistorical} />
+    </>
   );
 }

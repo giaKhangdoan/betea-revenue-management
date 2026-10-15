@@ -367,6 +367,8 @@ button { color: inherit; }
 .electricity-daily-summary .section-heading p { margin-top: 3px; }
 .electricity-daily-summary .electricity-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 0; }
 .electricity-daily-summary .form-note, .electricity-daily-summary .form-error { margin: 10px 0 0; }
+.electricity-reset-reason { margin: 15px 0; max-width: 760px; }
+.electricity-reset-reason > small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .week-footnote { margin: 13px 1px 0; }
 .week-revenue-chart { margin-bottom: 17px; border-bottom: 1px solid var(--line); padding: 2px 0 17px; }
 .week-chart-heading { margin-bottom: 9px; }

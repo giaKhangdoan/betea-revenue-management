@@ -19,6 +19,7 @@ type RecordRow = {
   shopee_vnd: number | null;
   electricity_morning_kwh: number | null;
   electricity_evening_kwh: number | null;
+  electricity_reset_reason: string | null;
 };
 
 function validDate(value?: string): value is string {
@@ -179,6 +180,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           businessDate: record.business_date,
           morningKwh: record.electricity_morning_kwh,
           eveningKwh: record.electricity_evening_kwh,
+          resetReason: record.electricity_reset_reason,
         }))),
       },
       cogsVnd: cost?.cogs_vnd == null ? null : Number(cost.cogs_vnd),

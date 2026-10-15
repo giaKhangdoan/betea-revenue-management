@@ -8,20 +8,27 @@ import { deleteR2Object } from "@/lib/storage/r2";
 
 export type PhotoActionResult = { error?: string; success?: string };
 
+const photoCategorySchema = z.enum(["bluebook", "cleaning", "arrangement", "other", "electricity_meter"]);
+const electricityPeriodSchema = z.union([z.literal(""), z.enum(["morning", "evening"])]);
+
 export async function addDayPhotoRecord(input: {
   date: string;
   category: string;
   shiftCode: string;
+  electricityPeriod: string;
   objectPath: string;
   caption: string;
 }): Promise<PhotoActionResult> {
   const parsed = z.object({
     date: z.iso.date().refine((date) => date >= "2026-09-01"),
-    category: z.enum(["bluebook", "cleaning", "arrangement", "other"]),
+    category: photoCategorySchema,
     shiftCode: z.union([z.literal(""), z.enum(["06-10", "10-14", "14-18", "18-22"])]),
+    electricityPeriod: electricityPeriodSchema,
     objectPath: z.string().min(8).max(360),
     caption: z.string().max(240),
-  }).safeParse(input);
+  }).refine((value) => value.category === "electricity_meter"
+    ? value.electricityPeriod !== "" && value.shiftCode === ""
+    : value.electricityPeriod === "").safeParse(input);
   if (!parsed.success) return { error: "Thông tin ảnh chưa hợp lệ." };
 
   const owner = await requireOwnerClient();
@@ -39,6 +46,7 @@ export async function addDayPhotoRecord(input: {
       p_business_date: parsed.data.date,
       p_category: parsed.data.category,
       p_shift_code: parsed.data.shiftCode,
+      p_electricity_period: parsed.data.electricityPeriod || null,
       p_object_path: parsed.data.objectPath,
       p_caption: parsed.data.caption,
     })
@@ -46,6 +54,7 @@ export async function addDayPhotoRecord(input: {
       p_business_date: parsed.data.date,
       p_category: parsed.data.category,
       p_shift_code: parsed.data.shiftCode,
+      p_electricity_period: parsed.data.electricityPeriod || null,
       p_object_path: parsed.data.objectPath,
       p_caption: parsed.data.caption,
     });
@@ -63,7 +72,7 @@ export async function deleteDayPhotoRecord(input: { date: string; id: string }):
   if (!owner) return { error: "Phiên đăng nhập hết hạn hoặc tài khoản chưa được cấp quyền." };
 
   const { data: photo, error: findError } = await owner.supabase.from("day_photos")
-    .select("id,owner_id,business_date,shift_code,category,object_path,storage_provider,caption,created_at")
+    .select("id,owner_id,business_date,shift_code,electricity_period,category,object_path,storage_provider,caption,created_at")
     .eq("owner_id", owner.ownerId).eq("business_date", parsed.data.date).eq("id", parsed.data.id).maybeSingle();
   if (findError || !photo) return { error: "Ảnh không còn tồn tại hoặc bạn không có quyền xóa." };
 
@@ -81,6 +90,7 @@ export async function deleteDayPhotoRecord(input: { date: string; id: string }):
         p_business_date: photo.business_date,
         p_category: photo.category,
         p_shift_code: photo.shift_code ?? "",
+        p_electricity_period: photo.electricity_period ?? null,
         p_object_path: photo.object_path,
         p_caption: photo.caption ?? "",
       });
@@ -95,6 +105,7 @@ export async function deleteDayPhotoRecord(input: { date: string; id: string }):
         p_business_date: photo.business_date,
         p_category: photo.category,
         p_shift_code: photo.shift_code ?? "",
+        p_electricity_period: photo.electricity_period ?? null,
         p_object_path: photo.object_path,
         p_caption: photo.caption ?? "",
       });
@@ -109,6 +120,7 @@ export async function deleteDayPhotoRecord(input: { date: string; id: string }):
       p_business_date: photo.business_date,
       p_category: photo.category,
       p_shift_code: photo.shift_code ?? "",
+      p_electricity_period: photo.electricity_period ?? null,
       p_object_path: photo.object_path,
       p_caption: photo.caption ?? "",
       });

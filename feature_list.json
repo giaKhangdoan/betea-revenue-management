@@ -228,5 +228,35 @@
     "verification_command": "Browser/query checks: catalog/receiving do not fetch full history; opening history fetches bounded pages; unit conversion and outlier prompt match source values.",
     "notes": "Covers stories: INV-01, ADV-02",
     "priority": "P1"
+  },
+  {
+    "id": "phase-01-electricity-schema-security",
+    "title": "Schema và quyền truy cập điện năng",
+    "status": "passing",
+    "evidence": "Local Docker pgTAP 35/35 assertions pass. Production migrations 20261015150747, 20261015150809 và 20261015150810 đã áp dụng; đã xác nhận hai bảng nhật ký có RLS, 3 thiết bị mặc định được tạo và chưa có log điện. Các cột kWh doanh thu hiện hữu vẫn là nguồn tính toán.",
+    "user_visible_behavior": "Lưu metadata công tơ theo kỳ và nhật ký thiết bị có quyền owner/staff phù hợp, không đổi nguồn kWh hiện tại.",
+    "verification_command": "Local migration preserves existing kWh; anon denied; staff writes only current day/one period; owner manages devices/history.",
+    "notes": "Covers stories: US-01, US-02, US-03, US-05, US-06",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-02-daily-electricity-entry",
+    "title": "Nhập nhật ký điện trong ngày",
+    "status": "passing",
+    "evidence": "Nhập điện tách riêng sáng/tối, thiết bị/checklist, giờ, lý do thiếu và ghi chú có trạng thái touched để tránh stale form ghi đè. Record-load failure khóa riêng form điện nhưng vẫn cho nhập doanh thu. Vitest 167/167, typecheck, ESLint, build pass; staff/security review không còn blocker.",
+    "user_visible_behavior": "Nhân viên nhập điện sáng/tối, thiết bị và checklist trong màn hình ngày; thiếu dữ liệu điện không chặn lưu doanh thu.",
+    "verification_command": "Save either period without changing the other; revenue saves with incomplete electricity; staff cannot edit past dates; owner can correct history.",
+    "notes": "Covers stories: US-01, US-02, US-03, US-04, US-06",
+    "priority": "P1"
+  },
+  {
+    "id": "phase-03-owner-review-and-compatibility",
+    "title": "Quản lý thiết bị, đối chiếu và tương thích",
+    "status": "passing",
+    "evidence": "Admin quản lý danh mục thiết bị và lịch sử snapshot; ảnh công tơ được đánh dấu kỳ sáng/tối qua R2; GET API và các phép tính hiện tại vẫn đọc hai cột kWh cũ. Đã áp dụng production migrations, xác nhận RLS và thiết bị mặc định; Vitest 167/167, typecheck, ESLint, build và local pgTAP 35/35 đều đạt.",
+    "user_visible_behavior": "Admin quản lý danh sách thiết bị, xem nhật ký/ảnh công tơ và tiếp tục dùng nguyên báo cáo điện hiện tại.",
+    "verification_command": "Inactive device history remains; meter photos filter by period; public GET response and electricity/profit calculations remain unchanged.",
+    "notes": "Covers stories: US-01, US-05, US-06, US-07",
+    "priority": "P1"
   }
 ]

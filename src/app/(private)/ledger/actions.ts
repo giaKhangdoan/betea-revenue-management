@@ -5,8 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { calculateReconciliationDifferenceVnd } from "@/lib/finance/calculations";
-import { addDays, parseVnd } from "@/lib/finance/format";
-import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
+import { addDays, currentBusinessDate, parseVnd } from "@/lib/finance/format";
 import { loadFinalizedExpenseMatches, type FinalizedPurchaseExpenseMatch } from "@/lib/owner-advances/loaders";
 
 export type EntryActionState = {
@@ -24,11 +23,39 @@ const shiftRevenueFields = [
   "shift_06_10_vnd", "shift_10_14_vnd", "shift_14_18_vnd", "shift_18_22_vnd",
 ] as const;
 const deliveryRevenueFields = ["grab_vnd", "shopee_vnd"] as const;
+const electricityTimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+const electricityDeviceFields = ["operating_status", "started_at", "ended_at", "ends_next_day", "ran_from_previous_night", "remains_on_after_close", "note"] as const;
+const electricityDeviceLogSchema = z.object({
+  device_id: z.uuid(),
+  device_mode: z.enum(["timed", "continuous"]),
+  operating_status: z.enum(["unrecorded", "not_running", "running"]),
+  started_at: electricityTimeSchema.nullable(),
+  ended_at: electricityTimeSchema.nullable(),
+  ends_next_day: z.boolean(),
+  ran_from_previous_night: z.boolean().nullable(),
+  remains_on_after_close: z.boolean().nullable(),
+  note: z.string().max(240).nullable(),
+  changed_fields: z.array(z.enum(electricityDeviceFields)).max(electricityDeviceFields.length).optional(),
+});
+const electricityChecklistSchema = z.object({
+  turned_off_unneeded: z.boolean().nullable(),
+  checked_cooler_doors: z.boolean().nullable(),
+  meter_photo_confirmed: z.boolean().nullable(),
+});
 
-function parseMeterValue(value: unknown): number | null {
-  if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+function parseElectricityKwh(value: unknown): number | null | undefined {
+  if (typeof value !== "string") return value === null ? null : undefined;
+  const raw = value.trim();
+  if (!raw) return null;
+  const normalized = raw.replace(",", ".");
+  if (!/^\d+(?:\.\d{1,3})?$/.test(normalized)) return undefined;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed <= 99_999_999_999.999 ? parsed : undefined;
+}
+
+function safeParseJson<TSchema extends z.ZodType>(raw: unknown, schema: TSchema) {
+  if (typeof raw !== "string") return schema.safeParse(undefined);
+  try { return schema.safeParse(JSON.parse(raw)); } catch { return schema.safeParse(undefined); }
 }
 
 export async function saveDailyRecord(_state: EntryActionState, formData: FormData): Promise<EntryActionState> {
@@ -38,15 +65,6 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
   const reconciliationStatus = formData.get("reconciliation_status");
   const bluebookTotal = parseVnd(formData.get("bluebook_total_vnd"));
   const reconciliationNote = formData.get("reconciliation_note");
-  const meterResetReasonValue = formData.get("electricity_reset_reason");
-  const meterResetReason = typeof meterResetReasonValue === "string" ? meterResetReasonValue.trim() : "";
-  const parseMeter = (value: FormDataEntryValue | null) => {
-    if (typeof value !== "string" || value.trim() === "") return null;
-    const result = Number(value.trim().replace(",", "."));
-    return Number.isFinite(result) && result >= 0 && result <= 99999999999.999 ? result : Number.NaN;
-  };
-  const morningMeter = parseMeter(formData.get("electricity_morning_kwh"));
-  const eveningMeter = parseMeter(formData.get("electricity_evening_kwh"));
   const parseChecklist = (value: FormDataEntryValue | null) => value === "yes" ? true : value === "no" ? false : value === "" || value === null ? null : "invalid";
   const cleaningDone = parseChecklist(formData.get("cleaning_done"));
   const arrangementDone = parseChecklist(formData.get("arrangement_done"));
@@ -61,8 +79,6 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
   if (Number.isNaN(bluebookTotal)) return { error: "Tổng Bluebook phải là số nguyên không âm." };
   if (note !== null && (typeof note !== "string" || note.length > 1000)) return { error: "Ghi chú tối đa 1.000 ký tự." };
   if (reconciliationNote !== null && (typeof reconciliationNote !== "string" || reconciliationNote.length > 240)) return { error: "Ghi chú chênh lệch tối đa 240 ký tự." };
-  if (meterResetReason.length > 240 || (meterResetReason && meterResetReason.length < 2)) return { error: "Lý do reset công tơ cần dài từ 2 đến 240 ký tự." };
-  if (Number.isNaN(morningMeter) || Number.isNaN(eveningMeter)) return { error: "Chỉ số điện cần là số không âm, tối đa 3 chữ số thập phân." };
   if (cleaningDone === "invalid" || arrangementDone === "invalid") return { error: "Chọn trạng thái vệ sinh và sắp xếp hợp lệ." };
 
   const values = Object.fromEntries(revenueFields.map((field) => [field, parseVnd(formData.get(field))])) as Record<typeof revenueFields[number], number | null>;
@@ -97,55 +113,6 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
 
   const owner = await requireOwnerClient();
   if (!owner) return { error: "Phiên đăng nhập hết hạn hoặc tài khoản chưa được cấp quyền." };
-  const monthStart = `${parsedDate.data.slice(0, 7)}-01`;
-  const monthLastDay = new Date(Date.UTC(Number(parsedDate.data.slice(0, 4)), Number(parsedDate.data.slice(5, 7)), 0)).getUTCDate();
-  const monthEnd = `${parsedDate.data.slice(0, 7)}-${String(monthLastDay).padStart(2, "0")}`;
-  const [previousMorningResult, previousEveningResult, monthRecordsResult] = await Promise.all([
-    owner.supabase.from("daily_records").select("business_date,electricity_morning_kwh").eq("owner_id", owner.ownerId).lt("business_date", monthStart).not("electricity_morning_kwh", "is", null).order("business_date", { ascending: false }).limit(1),
-    owner.supabase.from("daily_records").select("business_date,electricity_evening_kwh").eq("owner_id", owner.ownerId).lt("business_date", monthStart).not("electricity_evening_kwh", "is", null).order("business_date", { ascending: false }).limit(1),
-    loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: monthStart, end: monthEnd }),
-  ]);
-  if (previousMorningResult.error || previousEveningResult.error || monthRecordsResult.error) {
-    return { error: "Chưa kiểm tra được lịch sử công tơ. Hãy thử lưu lại sau." };
-  }
-  const previousPoints = [
-    ...(previousMorningResult.data ?? []).map((row) => ({ date: row.business_date, slot: 0, value: Number(row.electricity_morning_kwh) })),
-    ...(previousEveningResult.data ?? []).map((row) => ({ date: row.business_date, slot: 1, value: Number(row.electricity_evening_kwh) })),
-  ].sort((left, right) => right.date.localeCompare(left.date) || right.slot - left.slot);
-  const currentMonthRows: Array<Pick<typeof monthRecordsResult.data[number], "business_date" | "electricity_morning_kwh" | "electricity_evening_kwh" | "electricity_reset_reason">> = monthRecordsResult.data
-    .filter((row) => row.business_date !== parsedDate.data);
-  currentMonthRows.push({
-    business_date: parsedDate.data,
-    electricity_morning_kwh: morningMeter,
-    electricity_evening_kwh: eveningMeter,
-    electricity_reset_reason: meterResetReason || null,
-  });
-  currentMonthRows.sort((left, right) => left.business_date.localeCompare(right.business_date));
-  const meterPoints: Array<{ date: string; slot: number; value: number; resetReason: string | null }> = [];
-  const priorPoint = previousPoints[0];
-  if (priorPoint) meterPoints.push({ date: priorPoint.date, slot: priorPoint.slot, value: priorPoint.value, resetReason: null });
-  for (const row of currentMonthRows) {
-    const morning = parseMeterValue(row.electricity_morning_kwh);
-    const evening = parseMeterValue(row.electricity_evening_kwh);
-    if (morning !== null) meterPoints.push({ date: row.business_date, slot: 0, value: morning, resetReason: row.electricity_reset_reason });
-    if (evening !== null) meterPoints.push({ date: row.business_date, slot: 1, value: evening, resetReason: row.electricity_reset_reason });
-  }
-  meterPoints.sort((left, right) => left.date.localeCompare(right.date) || left.slot - right.slot);
-  let previousMeter: number | null = null;
-  let currentDateHasReset = false;
-  for (const point of meterPoints) {
-    if (previousMeter !== null && point.value < previousMeter) {
-      if (point.date === parsedDate.data) currentDateHasReset = true;
-      else if (!point.resetReason) return { error: `Chỉ số điện giảm tại ngày ${point.date}. Mở sổ ngày đó và ghi lý do reset trước khi lưu tiếp.` };
-    }
-    previousMeter = point.value;
-  }
-  if (currentDateHasReset && meterResetReason.length < 2) {
-    return { error: "Chỉ số điện thấp hơn lần ghi trước. Hãy nhập lý do thay hoặc reset công tơ." };
-  }
-  if (!currentDateHasReset && meterResetReason) {
-    return { error: "Chỉ nhập lý do khi chỉ số điện trong ngày thấp hơn lần ghi trước." };
-  }
   const { error } = await owner.supabase.rpc("save_owner_daily_record", {
     p_business_date: parsedDate.data,
     p_business_status: status,
@@ -155,8 +122,8 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
     p_shift_18_22_vnd: values.shift_18_22_vnd,
     p_grab_vnd: values.grab_vnd,
     p_shopee_vnd: values.shopee_vnd,
-    p_electricity_morning_kwh: morningMeter,
-    p_electricity_evening_kwh: eveningMeter,
+    p_electricity_morning_kwh: null,
+    p_electricity_evening_kwh: null,
     p_cleaning_done: cleaningDone,
     p_arrangement_done: arrangementDone,
     p_note: typeof note === "string" && note.trim() ? note.trim() : null,
@@ -164,7 +131,7 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
     p_bluebook_total_vnd: isReconciled ? bluebookTotal : null,
     p_reconciliation_difference_vnd: reconciliationDifference,
     p_reconciliation_note: typeof reconciliationNote === "string" && reconciliationNote.trim() ? reconciliationNote.trim() : null,
-    p_electricity_reset_reason: currentDateHasReset ? meterResetReason : null,
+    p_electricity_reset_reason: null,
   });
 
   if (error) return { error: "Chưa lưu được ngày này. Hãy kiểm tra kết nối rồi thử lại." };
@@ -175,6 +142,136 @@ export async function saveDailyRecord(_state: EntryActionState, formData: FormDa
   revalidatePath(`/ledger/${addDays(parsedDate.data, 1)}`);
   revalidatePath("/reports");
   return { success: "Đã lưu sổ ngày." };
+}
+
+export async function saveOwnerElectricityPeriod(_state: EntryActionState, formData: FormData): Promise<EntryActionState> {
+  const parsedDate = dateSchema.safeParse(formData.get("business_date"));
+  const period = formData.get("period");
+  const statusValue = formData.get("status");
+  if (!parsedDate.success || (period !== "morning" && period !== "evening")) return { error: "Ngày hoặc kỳ ghi điện không hợp lệ." };
+  if (statusValue !== "" && statusValue !== "recorded" && statusValue !== "unable") return { error: "Tình trạng ghi điện không hợp lệ." };
+  const status = statusValue as "" | "recorded" | "unable";
+
+  const owner = await requireOwnerClient();
+  if (!owner) return { error: "Phiên đăng nhập hết hạn hoặc tài khoản chưa được cấp quyền." };
+
+  const meterFieldsChanged = formData.get("meter_fields_changed") === "true";
+  const recordedAtValue = meterFieldsChanged ? formData.get("recorded_at") : "";
+  const recordedAtText = typeof recordedAtValue === "string" ? recordedAtValue.trim() : "";
+  const meterKwh = meterFieldsChanged ? parseElectricityKwh(formData.get("meter_kwh")) : null;
+  const unavailableValue = meterFieldsChanged ? formData.get("unavailable_reason") : "";
+  const unavailableReason = typeof unavailableValue === "string" ? unavailableValue.trim() : "";
+  const noteValue = formData.get("note");
+  const note = typeof noteValue === "string" ? noteValue.trim() : "";
+  const noteChanged = formData.get("note_changed") === "true";
+  const resetValue = formData.get("reset_reason");
+  const resetReason = typeof resetValue === "string" ? resetValue.trim() : "";
+  const resetReasonChanged = formData.get("reset_reason_changed") === "true";
+  const editValue = formData.get("edit_reason");
+  const editReason = typeof editValue === "string" ? editValue.trim() : "";
+
+  if (meterFieldsChanged && meterKwh === undefined) return { error: "Chỉ số công tơ cần là số không âm, tối đa 3 chữ số thập phân." };
+  if (meterFieldsChanged && recordedAtText && !electricityTimeSchema.safeParse(recordedAtText).success) return { error: "Giờ ghi chỉ số chưa hợp lệ." };
+  if (note.length > 500) return { error: "Ghi chú tối đa 500 ký tự." };
+  if (resetReason && (resetReason.length < 2 || resetReason.length > 240)) return { error: "Lý do reset công tơ cần dài từ 2 đến 240 ký tự." };
+  if (meterFieldsChanged && status === "recorded" && (!recordedAtText || meterKwh === null)) return { error: "Trạng thái Đã ghi cần có giờ ghi và chỉ số công tơ." };
+  if (meterFieldsChanged && status === "unable" && (unavailableReason.length < 2 || unavailableReason.length > 240)) return { error: "Hãy nhập lý do không ghi nhận được, từ 2 đến 240 ký tự." };
+  if (meterFieldsChanged && status !== "recorded" && (recordedAtText || meterKwh !== null)) return { error: "Chỉ nhập giờ và chỉ số khi chọn Đã ghi." };
+  if (meterFieldsChanged && status !== "unable" && unavailableReason) return { error: "Chỉ nhập lý do khi chọn Không ghi nhận được." };
+  if (parsedDate.data < currentBusinessDate() && (editReason.length < 5 || editReason.length > 500)) {
+    return { error: "Sửa nhật ký điện ngày cũ cần ghi lý do từ 5 đến 500 ký tự." };
+  }
+
+  const deviceLogsResult = safeParseJson(formData.get("device_logs_json"), z.array(electricityDeviceLogSchema).max(50));
+  const checklistResult = safeParseJson(formData.get("checklist_json"), electricityChecklistSchema);
+  if (!deviceLogsResult.success || !checklistResult.success) return { error: "Thông tin thiết bị hoặc checklist chưa đúng định dạng." };
+  const deviceLogs = deviceLogsResult.data;
+  if (new Set(deviceLogs.map((log) => log.device_id)).size !== deviceLogs.length) return { error: "Danh sách thiết bị bị trùng. Tải lại trang rồi thử lại." };
+  for (const log of deviceLogs) {
+    if (log.operating_status === "running" && log.device_mode === "timed" && (!log.started_at || !log.ended_at)) {
+      return { error: "Thiết bị theo dõi giờ cần có cả giờ bật và giờ tắt." };
+    }
+    if (log.device_mode === "continuous" && (log.started_at || log.ended_at || log.ends_next_day)) {
+      return { error: "Thiết bị chạy liên tục không cần giờ bật/tắt." };
+    }
+    if (log.operating_status !== "running" && (log.started_at || log.ended_at || log.ends_next_day)) {
+      return { error: "Chỉ nhập giờ bật/tắt khi thiết bị có hoạt động." };
+    }
+    if (log.ends_next_day && period !== "evening") return { error: "Giờ tắt sang ngày hôm sau chỉ áp dụng cho ca tối." };
+    if ((period === "morning" && log.remains_on_after_close !== null) || (period === "evening" && log.ran_from_previous_night !== null)) {
+      return { error: "Thông tin thiết bị không khớp kỳ ghi điện." };
+    }
+  }
+
+  const { error } = await owner.supabase.rpc("owner_save_electricity_period", {
+    p_business_date: parsedDate.data,
+    p_period: period,
+    p_status: meterFieldsChanged ? status || "unrecorded" : null,
+    p_recorded_at: meterFieldsChanged && status === "recorded" ? recordedAtText : null,
+    p_meter_kwh: meterFieldsChanged && status === "recorded" ? meterKwh : null,
+    p_unavailable_reason: meterFieldsChanged && status === "unable" ? unavailableReason : null,
+    p_note: noteChanged ? note : null,
+    p_device_logs: deviceLogs,
+    p_checklist: period === "evening" ? checklistResult.data : null,
+    p_reset_reason: resetReasonChanged ? resetReason : null,
+    p_edit_reason: parsedDate.data < currentBusinessDate() ? editReason : null,
+  });
+
+  if (error) {
+    if (error.message.includes("historical electricity")) return { error: "Sửa nhật ký điện ngày cũ cần ghi lý do từ 5 đến 500 ký tự." };
+    if (error.message.includes("reset reason") || error.message.includes("meter decreases")) return { error: "Chỉ số thấp hơn lần ghi trước. Hãy nhập lý do thay hoặc reset công tơ." };
+    if (error.message.includes("later meter value decrease")) return { error: "Thay đổi này làm chỉ số ở kỳ sau bị giảm. Hãy kiểm tra và sửa kỳ sau trước." };
+    if (error.message.includes("settings changed")) return { error: "Danh sách thiết bị vừa thay đổi. Tải lại trang rồi thử lại." };
+    return { error: "Chưa lưu được nhật ký điện. Hãy kiểm tra dữ liệu và thử lại." };
+  }
+
+  revalidatePath("/");
+  revalidatePath("/ledger");
+  revalidatePath(`/ledger/${parsedDate.data}`);
+  revalidatePath(`/ledger/${addDays(parsedDate.data, -1)}`);
+  revalidatePath(`/ledger/${addDays(parsedDate.data, 1)}`);
+  revalidatePath("/costs");
+  revalidatePath("/reports");
+  return { success: `Đã lưu ghi nhận ${period === "morning" ? "ca sáng" : "ca tối"}.` };
+}
+
+export async function saveOwnerElectricityDeviceAction(_state: EntryActionState, formData: FormData): Promise<EntryActionState> {
+  const date = dateSchema.safeParse(formData.get("business_date"));
+  const rawId = formData.get("device_id");
+  const deviceId = rawId === "" ? null : z.uuid().safeParse(rawId);
+  const nameValue = formData.get("name");
+  const mode = formData.get("mode");
+  const orderValue = formData.get("sort_order");
+  const activeValue = formData.get("active");
+  if (!date.success || (deviceId !== null && !deviceId.success)) return { error: "Ngày hoặc thiết bị không hợp lệ." };
+  if (typeof nameValue !== "string" || nameValue.trim().length < 2 || nameValue.trim().length > 80) {
+    return { error: "Tên thiết bị cần dài từ 2 đến 80 ký tự." };
+  }
+  if (mode !== "timed" && mode !== "continuous") return { error: "Chọn cách theo dõi thiết bị hợp lệ." };
+  if (typeof orderValue !== "string" || !/^\d{1,9}$/.test(orderValue.trim())) return { error: "Thứ tự hiển thị cần là số nguyên không âm." };
+  const sortOrder = Number(orderValue);
+  if (!Number.isSafeInteger(sortOrder) || sortOrder > 2_147_483_647) return { error: "Thứ tự hiển thị vượt giới hạn." };
+  if (activeValue !== "true" && activeValue !== "false") return { error: "Chọn trạng thái theo dõi hợp lệ." };
+
+  const owner = await requireOwnerClient();
+  if (!owner) return { error: "Phiên đăng nhập hết hạn hoặc tài khoản chưa được cấp quyền." };
+  const { error } = await owner.supabase.rpc("owner_save_electricity_device", {
+    p_device_id: deviceId === null ? null : deviceId.data,
+    p_name: nameValue.trim(),
+    p_mode: mode,
+    p_sort_order: sortOrder,
+    p_active: activeValue === "true",
+  });
+  if (error) {
+    if (error.code === "23505") return { error: "Tên thiết bị này đã có trong danh mục. Hãy dùng tên khác." };
+    if (error.message.includes("Invalid electricity device settings")) return { error: "Thông tin thiết bị không hợp lệ. Kiểm tra tên, cách theo dõi và thứ tự." };
+    return { error: "Chưa lưu được thiết bị. Tải lại danh mục rồi thử lại." };
+  }
+
+  revalidatePath("/ledger");
+  revalidatePath(`/ledger/${date.data}`);
+  revalidatePath("/staff/entry");
+  return { success: activeValue === "true" ? "Đã lưu thiết bị đang theo dõi." : "Đã lưu trữ thiết bị. Nhật ký cũ vẫn được giữ." };
 }
 
 export async function addDailyExpense(_state: EntryActionState, formData: FormData): Promise<EntryActionState> {

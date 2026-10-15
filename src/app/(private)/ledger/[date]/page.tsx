@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DailyEntryForm } from "@/components/ledger/daily-entry-form";
+import type { OwnerElectricityDevice, OwnerElectricityDeviceLog } from "@/components/ledger/daily-electricity-journal";
 import { DailyExpenseForm } from "@/components/ledger/daily-expense-form";
 import { PhotoManager } from "@/components/ledger/photo-manager";
 import { OwnerLiveRefresh } from "@/components/ledger/owner-live-refresh";
 import { DeletedShiftHistory } from "@/components/ledger/deleted-shift-history";
-import { addDays, formatBusinessDate, formatVnd } from "@/lib/finance/format";
+import { addDays, currentBusinessDate, formatBusinessDate, formatVnd } from "@/lib/finance/format";
 import { requireOwnerClient } from "@/lib/auth/require-owner";
 import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 import { createEvidencePhotoUrl } from "@/lib/storage/photo-url";
@@ -19,14 +20,21 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
   const owner = await requireOwnerClient();
   if (!owner) redirect("/login");
 
-  const [dayResult, nextDayResult, expensesResult, photosResult, deletedShiftsResult] = await Promise.all([
+  const [dayResult, nextDayResult, electricityRecordResult, electricityDevicesResult, electricityLogsResult, expensesResult, photosResult, deletedShiftsResult] = await Promise.all([
     loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: date, end: date }),
     loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: addDays(date, 1), end: addDays(date, 1) }),
+    owner.supabase.from("daily_records").select("business_date,electricity_morning_kwh,electricity_evening_kwh,electricity_morning_status,electricity_morning_recorded_at,electricity_morning_unavailable_reason,electricity_morning_note,electricity_evening_status,electricity_evening_recorded_at,electricity_evening_unavailable_reason,electricity_evening_note,electricity_evening_turned_off_unneeded,electricity_evening_checked_cooler_doors,electricity_evening_meter_photo_confirmed").eq("owner_id", owner.ownerId).eq("business_date", date).maybeSingle(),
+    owner.supabase.from("electricity_devices").select("id,name,mode,sort_order,is_active").eq("owner_id", owner.ownerId).order("sort_order", { ascending: true }).order("name", { ascending: true }),
+    owner.supabase.from("daily_electricity_device_logs").select("device_id,period,device_name_snapshot,device_mode_snapshot,operating_status,started_at,ended_at,ends_next_day,ran_from_previous_night,remains_on_after_close,note").eq("owner_id", owner.ownerId).eq("business_date", date).order("period", { ascending: true }),
     owner.supabase.from("daily_expenses").select("id,amount_vnd,reason,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).is("deleted_at", null).order("created_at", { ascending: false }),
-    owner.supabase.from("day_photos").select("id,category,shift_code,object_path,storage_provider,caption,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
+    owner.supabase.from("day_photos").select("id,category,shift_code,electricity_period,object_path,storage_provider,caption,created_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("created_at", { ascending: false }),
     owner.supabase.from("daily_shift_deletions").select("id,shift_code,amount_vnd,deleted_at,restored_at").eq("owner_id", owner.ownerId).eq("business_date", date).order("deleted_at", { ascending: false }),
   ]);
-  const record = dayResult.data?.[0] ?? null;
+  const dayRecord = dayResult.data?.[0] ?? null;
+  const record = dayRecord || electricityRecordResult.data
+    ? { ...dayRecord, ...electricityRecordResult.data, electricity_reset_reason: dayRecord?.electricity_reset_reason ?? null }
+    : null;
+  const electricityLoadError = Boolean(electricityRecordResult.error || electricityDevicesResult.error || electricityLogsResult.error);
   const expenses = expensesResult.data ?? [];
   const photos = await Promise.all((photosResult.data ?? []).map(async (photo) => {
     const signedUrl = await createEvidencePhotoUrl(owner.supabase, photo);
@@ -43,7 +51,7 @@ export default async function LedgerDayPage({ params }: { params: Promise<{ date
       <OwnerLiveRefresh ownerId={owner.ownerId} date={date} />
       <div className="day-layout">
         <div className="day-primary">
-          {dayResult.error ? <p className="form-error" role="alert">Không tải được sổ của ngày này. Đã khóa nhập/sửa để tránh ghi đè doanh thu cũ bằng biểu mẫu trống; hãy tải lại trang khi kết nối ổn định.</p> : <DailyEntryForm key={date} date={date} record={record} nextMorningKwh={nextDayResult.data?.[0]?.electricity_morning_kwh == null ? null : Number(nextDayResult.data[0].electricity_morning_kwh)} />}
+          {dayResult.error ? <p className="form-error" role="alert">Không tải được sổ của ngày này. Đã khóa nhập/sửa để tránh ghi đè doanh thu cũ bằng biểu mẫu trống; hãy tải lại trang khi kết nối ổn định.</p> : <DailyEntryForm key={date} date={date} record={record} nextMorningKwh={nextDayResult.data?.[0]?.electricity_morning_kwh == null ? null : Number(nextDayResult.data[0].electricity_morning_kwh)} devices={(electricityDevicesResult.data ?? []) as OwnerElectricityDevice[]} deviceLogs={(electricityLogsResult.data ?? []) as OwnerElectricityDeviceLog[]} electricityLoadError={electricityLoadError} isHistorical={date < currentBusinessDate()} />}
           {nextDayResult.error ? <p className="form-note" role="status">Chưa tải được chỉ số ca sáng ngày mai; phần điện qua đêm chưa thể tính hoặc xác nhận.</p> : null}
           <DailyExpenseForm date={date} />
           <DeletedShiftHistory date={date} rows={(deletedShiftsResult.data ?? []) as never} />
