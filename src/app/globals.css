@@ -662,8 +662,13 @@ button { color: inherit; }
 .staff-amount-cell { display: grid; gap: 6px; align-content: start; }
 .staff-inline-delete { justify-self: start; }
 .staff-order-box { display: grid; gap: 10px; border: 1px solid var(--line); background: #fcfdfc; padding: 13px; }
-.electricity-period-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); align-items: start; gap: 16px; }
-.electricity-period-grid > *, .electricity-period-form, .electricity-settings-form { min-width: 0; }
+.electricity-period-tabs { display: grid; gap: 14px; min-width: 0; }
+.electricity-period-selector { display: flex; gap: 4px; border-radius: 6px; background: #f2f5f3; padding: 4px; }
+.electricity-period-selector > button { flex: 1; min-height: 44px; border: 0; border-radius: 4px; background: transparent; padding: 9px 14px; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; }
+.electricity-period-selector > button[aria-selected="true"] { background: #fff; color: var(--accent-strong); }
+.electricity-period-selector > button:disabled { cursor: wait; opacity: .6; }
+.electricity-period-panel, .electricity-period-form, .electricity-settings-form { min-width: 0; }
+.electricity-period-panel[hidden] { display: none; }
 .electricity-period-form { gap: 14px; border-radius: 6px; background: #fff; padding: 16px; }
 .electricity-period-form .section-heading { margin-bottom: 0; }
 .electricity-period-form .section-heading > div { min-width: 0; }
@@ -672,7 +677,7 @@ button { color: inherit; }
 .electricity-period-form .field > span, .electricity-settings-form .field > span { font-size: 13px; }
 .electricity-period-form .field input, .electricity-period-form .field select, .electricity-period-form .field textarea,
 .electricity-settings-form .field input, .electricity-settings-form .field select { min-width: 0; max-width: 100%; }
-.electricity-device-list { display: grid; gap: 12px; min-width: 0; }
+.electricity-device-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); align-items: start; gap: 12px; min-width: 0; }
 .electricity-device-card { display: grid; align-content: start; gap: 12px; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfb; padding: 14px; }
 .electricity-device-heading { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .electricity-device-heading strong { font-size: 14px; font-weight: 620; line-height: 1.45; }
@@ -683,6 +688,13 @@ button { color: inherit; }
 .electricity-device-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .electricity-device-row > div { display: grid; gap: 3px; overflow-wrap: anywhere; }
 .electricity-device-row > div > span { color: var(--muted); font-size: 12px; }
+.electricity-batch-progress { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin: 0; color: var(--muted); font-size: 12px; scroll-margin-top: 24px; }
+.electricity-batch-progress strong { color: var(--ink); font-weight: 600; }
+.electricity-batch-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.electricity-closing-checklist .inventory-checkbox { align-items: flex-start; padding: 8px 0; }
+.electricity-closing-checklist .inventory-checkbox input { flex: 0 0 18px; margin-top: 2px; }
+.electricity-checklist-copy { display: grid; gap: 3px; line-height: 1.5; }
+.electricity-checklist-copy small { color: var(--muted); font-size: 11px; font-weight: 400; }
 .staff-order-current { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .staff-order-current span { color: var(--muted); font-size: 11px; }
 .staff-order-current strong { font-size: 20px; font-weight: 650; }

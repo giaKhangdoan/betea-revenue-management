@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useCallback, useState } from "react";
+import { startTransition, useActionState, useCallback, useState } from "react";
 import { saveStaffElectricityPeriodAction, saveStaffEntryAction, type StaffEntryActionState } from "@/app/(staff)/staff/actions";
 import { ActionMessage } from "@/components/ledger/action-message";
+import { ElectricityBatchNavigation, ElectricityBatchProgress, ElectricityClosingChecklist, ElectricityPeriodTabs, useElectricityDeviceBatch } from "@/components/ledger/electricity-entry-controls";
 import { formatVnd } from "@/lib/finance/format";
 
 type StaffRecord = {
@@ -132,6 +133,7 @@ function ElectricityPeriodForm({
   note: initialNote,
   checklistValues,
   editable,
+  onSavePendingChange,
 }: {
   date: string;
   period: "morning" | "evening";
@@ -144,6 +146,7 @@ function ElectricityPeriodForm({
   note: string | null;
   checklistValues: { turnedOffUnneeded: boolean | null; checkedCoolerDoors: boolean | null; meterPhotoConfirmed: boolean | null };
   editable: boolean;
+  onSavePendingChange: (delta: number) => void;
 }) {
   const [status, setStatus] = useState<"" | "recorded" | "unable">(initialStatus ?? "");
   const [recordedAt, setRecordedAt] = useState(initialRecordedAt?.slice(0, 5) ?? "");
@@ -152,6 +155,7 @@ function ElectricityPeriodForm({
   const [note, setNote] = useState(initialNote ?? "");
   const [noteTouched, setNoteTouched] = useState(false);
   const logMap = new Map(savedLogs.map((log) => [log.device_id, log]));
+  const deviceBatch = useElectricityDeviceBatch(devices);
   const [deviceInputs, setDeviceInputs] = useState<Record<string, ElectricityDeviceInput>>(() => Object.fromEntries(devices.map((device) => {
     const saved = logMap.get(device.id);
     return [device.id, {
@@ -172,15 +176,25 @@ function ElectricityPeriodForm({
   }));
   const [meterFieldsTouched, setMeterFieldsTouched] = useState(false);
   const saveAndResetTouchedState = useCallback(async (previousState: StaffEntryActionState, formData: FormData) => {
-    const result = await saveStaffElectricityPeriodAction(previousState, formData);
-    if (result?.success) {
-      setMeterFieldsTouched(false);
-      setNoteTouched(false);
-      setDeviceInputs((current) => Object.fromEntries(Object.entries(current).map(([id, input]) => [id, { ...input, changed_fields: [] }])));
-      setChecklist((current) => Object.fromEntries(Object.entries(current).map(([key, value]) => [key, { ...value, touched: false }])) as ElectricityChecklist);
+    try {
+      const result = await saveStaffElectricityPeriodAction(previousState, formData);
+      if (result?.success) {
+        setMeterFieldsTouched(false);
+        setNoteTouched(false);
+        setDeviceInputs((current) => Object.fromEntries(Object.entries(current).map(([id, input]) => [id, deviceBatch.deviceIds.includes(id) ? { ...input, changed_fields: [] } : input])));
+        if (deviceBatch.isLast) setChecklist((current) => Object.fromEntries(Object.entries(current).map(([key, value]) => [key, { ...value, touched: false }])) as ElectricityChecklist);
+        else {
+          deviceBatch.next();
+          return { success: "Đã lưu nhóm thiết bị. Tiếp tục nhập nhóm kế tiếp." };
+        }
+      }
+      return result;
+    } catch {
+      return { error: "Chưa lưu được nhật ký điện. Dữ liệu vừa nhập vẫn được giữ để bạn thử lại." };
+    } finally {
+      onSavePendingChange(-1);
     }
-    return result;
-  }, []);
+  }, [deviceBatch, onSavePendingChange]);
   const [state, action, pending] = useActionState<StaffEntryActionState, FormData>(saveAndResetTouchedState, undefined);
   const canEdit = editable && !pending;
 
@@ -205,7 +219,7 @@ function ElectricityPeriodForm({
       } };
     });
   };
-  const serializedLogs = JSON.stringify(devices.filter((device) => (deviceInputs[device.id]?.changed_fields.length ?? 0) > 0).map((device) => {
+  const serializedLogs = JSON.stringify(deviceBatch.visibleDevices.filter((device) => (deviceInputs[device.id]?.changed_fields.length ?? 0) > 0).map((device) => {
     const input = deviceInputs[device.id];
     const saved = logMap.get(device.id);
     const effectiveMode = saved?.device_mode_snapshot ?? device.mode;
@@ -223,9 +237,16 @@ function ElectricityPeriodForm({
       changed_fields: input?.changed_fields ?? [],
     };
   }));
-  const serializedChecklist = JSON.stringify(Object.fromEntries(Object.entries(checklist).map(([key, value]) => [key, value.touched ? value.value : null])));
+  const serializedChecklist = JSON.stringify(Object.fromEntries(Object.entries(checklist).map(([key, value]) => [key, deviceBatch.isLast && value.touched ? value.value : null])));
 
-  return <form className="staff-single-form electricity-period-form" action={action}>
+  return <form className="staff-single-form electricity-period-form" onSubmit={(event) => {
+    event.preventDefault();
+    if (!canEdit) return;
+    // Dispatch manually so a failed save cannot reset the controlled draft fields.
+    const formData = new FormData(event.currentTarget);
+    onSavePendingChange(1);
+    startTransition(() => action(formData));
+  }}>
     <input type="hidden" name="business_date" value={date} />
     <input type="hidden" name="kind" value="electricity_period" />
     <input type="hidden" name="period" value={period} />
@@ -252,7 +273,8 @@ function ElectricityPeriodForm({
     {initialMeterKwh !== null ? <div className="form-note">Đang có chỉ số cũ {new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 3 }).format(initialMeterKwh)} kWh. Không đổi gì để giữ lại; dùng nút dưới đây nếu muốn xóa chỉ số.<button className="text-button" type="button" disabled={!canEdit} onClick={() => { setStatus(""); setRecordedAt(""); setMeterKwh(""); setUnavailableReason(""); setMeterFieldsTouched(true); }}>Đưa về “Chưa ghi” và xóa chỉ số</button></div> : null}
     <section className="staff-entry-group">
       <div className="section-heading"><div><h3>Thiết bị trong {period === "morning" ? "ca sáng" : "ca tối"}</h3><p>{period === "morning" ? "Ghi nhận thiết bị còn chạy từ đêm trước và hoạt động trong ca." : "Ghi nhận thời gian hoạt động và thiết bị dự kiến để chạy qua đêm."}</p></div></div>
-      {devices.length === 0 ? <p className="form-note">Chưa có thiết bị đang theo dõi.</p> : <div className="electricity-device-list">{devices.map((device) => {
+      <ElectricityBatchProgress batch={deviceBatch} />
+      {devices.length === 0 ? <p className="form-note">Chưa có thiết bị đang theo dõi.</p> : <div className="electricity-device-list">{deviceBatch.visibleDevices.map((device) => {
         const input = deviceInputs[device.id];
         const saved = logMap.get(device.id);
         const effectiveName = saved?.device_name_snapshot ?? device.name;
@@ -272,13 +294,9 @@ function ElectricityPeriodForm({
         </div>;
       })}</div>}
     </section>
-    {period === "evening" ? <div className="staff-entry-group"><h3>Checklist chốt ca</h3>{([
-      ["turned_off_unneeded", "Đã tắt thiết bị không cần thiết"],
-      ["checked_cooler_doors", "Đã kiểm tra cửa tủ mát / tủ đông"],
-      ["meter_photo_confirmed", "Đã chụp ảnh công tơ"],
-    ] as const).map(([key, label]) => <label className="inventory-checkbox" key={key}><input type="checkbox" checked={checklist[key].value === true} disabled={!canEdit} onChange={(event) => setChecklist((current) => ({ ...current, [key]: { value: event.currentTarget.checked, touched: true } }))} /><span>{label}<small>{checklist[key].value === null ? "Chưa xác nhận" : checklist[key].value ? "Đã xác nhận" : "Chưa hoàn tất"}</small></span></label>)}</div> : null}
+    {period === "evening" && deviceBatch.isLast ? <ElectricityClosingChecklist values={checklist} disabled={!canEdit} onChange={(key, checked) => setChecklist((current) => ({ ...current, [key]: { value: checked, touched: true } }))} /> : null}
     <label className="field"><span>Ghi chú / bất thường</span><textarea name="note" rows={2} maxLength={500} placeholder="Thiết bị quên tắt, máy chạy bất thường, sự kiện trong ca…" value={note} onChange={(event) => { setNote(event.currentTarget.value); setNoteTouched(true); }} disabled={!canEdit} /></label>
-    {editable ? <button className="button button-secondary" type="submit" disabled={!canEdit || pending}>{pending ? "Đang lưu…" : `Lưu ghi nhận ${period === "morning" ? "ca sáng" : "ca tối"}`}</button> : null}
+    <ElectricityBatchNavigation batch={deviceBatch} period={period} canSave={editable} busy={pending} />
     <Feedback state={state} />
   </form>;
 }
@@ -293,6 +311,8 @@ export function StaffEntryForm({ date, record, editable, electricityEditable = e
   electricityLoadError?: boolean;
 }) {
   const [state, action, pending] = useActionState<StaffEntryActionState, FormData>(saveStaffEntryAction, undefined);
+  const [electricitySavingCount, setElectricitySavingCount] = useState(0);
+  const onElectricitySavePendingChange = useCallback((delta: number) => setElectricitySavingCount((current) => Math.max(0, current + delta)), []);
   const shiftValues = record ?? { shift_06_10_vnd: null, shift_10_14_vnd: null, shift_14_18_vnd: null, shift_18_22_vnd: null, grab_vnd: null, shopee_vnd: null, grab_order_count: 0, shopee_order_count: 0, total_bill_count: null, electricity_morning_kwh: null, electricity_evening_kwh: null };
   const shiftValuesOnly = [shiftValues.shift_06_10_vnd, shiftValues.shift_10_14_vnd, shiftValues.shift_14_18_vnd, shiftValues.shift_18_22_vnd];
   const complete = shiftValuesOnly.every((value) => value !== null);
@@ -303,9 +323,9 @@ export function StaffEntryForm({ date, record, editable, electricityEditable = e
     <div className="staff-entry-group"><h3>Grab và Shopee · doanh thu cuối ngày</h3><div className="staff-shift-grid"><AmountForm date={date} kind="platform_revenue" channel="grab" initial={shiftValues.grab_vnd} label="Grab · doanh thu" optional editable={editable} state={state} action={action} pending={pending} /><AmountForm date={date} kind="platform_revenue" channel="shopee" initial={shiftValues.shopee_vnd} label="Shopee · doanh thu" optional editable={editable} state={state} action={action} pending={pending} /></div></div>
     <div className="staff-entry-group"><h3>Số đơn giao hàng</h3><div className="staff-shift-grid"><OrdersForm date={date} channel="grab" initial={shiftValues.grab_order_count} editable={editable} state={state} action={action} pending={pending} /><OrdersForm date={date} channel="shopee" initial={shiftValues.shopee_order_count} editable={editable} state={state} action={action} pending={pending} /></div></div>
     <div className="staff-entry-group"><h3>Tổng bill cuối ngày</h3><form className="staff-single-form" action={action}><input type="hidden" name="business_date" value={date} /><input type="hidden" name="kind" value="total_bills" /><label className="field"><span>Tổng số bill của tất cả kênh</span><input name="count" defaultValue={shiftValues.total_bill_count == null ? "" : String(shiftValues.total_bill_count)} inputMode="numeric" placeholder="Nhập số đơn bán được" disabled={!editable} /></label><button className="button button-secondary" type="submit" disabled={!editable || pending}>{pending ? "Đang lưu…" : "Lưu tổng bill"}</button><Feedback state={state} /></form><p className="form-note">Tổng bill là số đơn bán được, bao gồm quầy, Grab và Shopee; hệ thống không tự cộng từ doanh thu.</p></div>
-    <div className="staff-entry-group"><h3>Nhật ký điện theo ca</h3><p className="form-note">Thiếu thông tin điện không ảnh hưởng đến việc lưu doanh thu.</p>{electricityLoadError ? <p className="form-error" role="alert">Chưa tải đủ dữ liệu ca và nhật ký thiết bị. Doanh thu vẫn nhập được; hãy tải lại trang trước khi lưu phần điện.</p> : null}<div className="electricity-period-grid">
-      <ElectricityPeriodForm date={date} period="morning" devices={electricityDevices} savedLogs={electricityDeviceLogs.filter((log) => log.period === "morning")} status={shiftValues.electricity_morning_status ?? null} recordedAt={shiftValues.electricity_morning_recorded_at ?? null} meterKwh={shiftValues.electricity_morning_kwh} unavailableReason={shiftValues.electricity_morning_unavailable_reason ?? null} note={shiftValues.electricity_morning_note ?? null} checklistValues={{ turnedOffUnneeded: null, checkedCoolerDoors: null, meterPhotoConfirmed: null }} editable={electricityEditable && !electricityLoadError} />
-      <ElectricityPeriodForm date={date} period="evening" devices={electricityDevices} savedLogs={electricityDeviceLogs.filter((log) => log.period === "evening")} status={shiftValues.electricity_evening_status ?? null} recordedAt={shiftValues.electricity_evening_recorded_at ?? null} meterKwh={shiftValues.electricity_evening_kwh} unavailableReason={shiftValues.electricity_evening_unavailable_reason ?? null} note={shiftValues.electricity_evening_note ?? null} checklistValues={{ turnedOffUnneeded: shiftValues.electricity_evening_turned_off_unneeded ?? null, checkedCoolerDoors: shiftValues.electricity_evening_checked_cooler_doors ?? null, meterPhotoConfirmed: shiftValues.electricity_evening_meter_photo_confirmed ?? null }} editable={electricityEditable && !electricityLoadError} />
-    </div></div>
+    <div className="staff-entry-group"><h3>Nhật ký điện theo ca</h3><p className="form-note">Mỗi lượt nhập 2 thiết bị; lưu để chuyển sang nhóm tiếp theo.</p>{electricityLoadError ? <p className="form-error" role="alert">Chưa tải đủ dữ liệu ca và nhật ký thiết bị. Doanh thu vẫn nhập được; hãy tải lại trang trước khi lưu phần điện.</p> : null}<ElectricityPeriodTabs disabled={electricitySavingCount > 0}
+      morning={<ElectricityPeriodForm date={date} period="morning" devices={electricityDevices} savedLogs={electricityDeviceLogs.filter((log) => log.period === "morning")} status={shiftValues.electricity_morning_status ?? null} recordedAt={shiftValues.electricity_morning_recorded_at ?? null} meterKwh={shiftValues.electricity_morning_kwh} unavailableReason={shiftValues.electricity_morning_unavailable_reason ?? null} note={shiftValues.electricity_morning_note ?? null} checklistValues={{ turnedOffUnneeded: null, checkedCoolerDoors: null, meterPhotoConfirmed: null }} editable={electricityEditable && !electricityLoadError} onSavePendingChange={onElectricitySavePendingChange} />}
+      evening={<ElectricityPeriodForm date={date} period="evening" devices={electricityDevices} savedLogs={electricityDeviceLogs.filter((log) => log.period === "evening")} status={shiftValues.electricity_evening_status ?? null} recordedAt={shiftValues.electricity_evening_recorded_at ?? null} meterKwh={shiftValues.electricity_evening_kwh} unavailableReason={shiftValues.electricity_evening_unavailable_reason ?? null} note={shiftValues.electricity_evening_note ?? null} checklistValues={{ turnedOffUnneeded: shiftValues.electricity_evening_turned_off_unneeded ?? null, checkedCoolerDoors: shiftValues.electricity_evening_checked_cooler_doors ?? null, meterPhotoConfirmed: shiftValues.electricity_evening_meter_photo_confirmed ?? null }} editable={electricityEditable && !electricityLoadError} onSavePendingChange={onElectricitySavePendingChange} />}
+    /></div>
   </section>;
 }
