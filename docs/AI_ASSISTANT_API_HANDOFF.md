@@ -4,7 +4,7 @@ Tài liệu này mô tả API và dữ liệu theo mã nguồn hiện tại. Tà
 
 ## 1. Kết luận về khả năng tích hợp hiện tại
 
-Mã nguồn hiện có REST API công khai chỉ đọc chỉ số điện dành cho AI bên ngoài tại `GET /api/ai/v1/electricity`. API không yêu cầu đăng nhập hoặc token và chỉ trả chỉ số điện cùng kWh sử dụng. Bất kỳ ai biết URL đều có thể đọc dữ liệu điện trong khoảng ngày được hỗ trợ; không dùng endpoint này để trả thêm doanh thu, lợi nhuận hay dữ liệu nhạy cảm khác. Các trang dashboard và báo cáo vẫn đọc bằng Supabase server client gắn với phiên đăng nhập. Các thao tác ghi được triển khai bằng Next.js Server Actions; đây là giao tiếp nội bộ của giao diện, không phải API ổn định để cấp cho nhà cung cấp AI.
+REST API công khai dành cho AI tại `GET /api/ai/v1/electricity` đọc chỉ số công tơ, tình trạng ghi nhận, nhật ký thiết bị, checklist chốt ca, mức tiêu thụ đã tính và metadata ảnh công tơ. API không yêu cầu đăng nhập hoặc token. Bất kỳ ai biết URL đều có thể đọc dữ liệu điện trong khoảng ngày được hỗ trợ; không dùng endpoint này để trả thêm doanh thu, lợi nhuận hay dữ liệu nhạy cảm khác. API chỉ trả metadata ảnh, không trả ảnh, object path hoặc URL xem ảnh. Các trang dashboard và báo cáo vẫn đọc bằng Supabase server client gắn với phiên đăng nhập. Các thao tác ghi được triển khai bằng Next.js Server Actions; đây là giao tiếp nội bộ của giao diện, không phải API ổn định để cấp cho nhà cung cấp AI.
 
 Không gửi tài khoản đăng nhập, cookie phiên, khóa `SUPABASE_SERVICE_ROLE_KEY`, khóa Supabase hay quyền truy cập trực tiếp database cho bên thứ ba.
 
@@ -25,7 +25,7 @@ Các URL dưới đây nằm dưới domain triển khai của ứng dụng. Rou
 | `POST /api/admin/advances/evidence/finalize` | Phiên owner | Xác minh và gắn ảnh hóa đơn vào phiếu mua | Không. Đây là luồng ghi dữ liệu |
 | `POST /api/admin/advances/evidence/cleanup` | Phiên owner | Dọn các ảnh tải dở đã hết hạn | Không. Route có thể xóa đối tượng R2 tạm |
 | `GET /api/admin/advances/evidence/{evidenceId}/url` | Phiên owner | Trả URL xem ảnh hóa đơn riêng tư, có thời hạn 5 phút | Không. Chứng từ mua hàng nhạy cảm |
-| `GET /api/ai/v1/electricity?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD` | Công khai, không cần đăng nhập hoặc token | Đọc chỉ số công tơ và kWh tiêu thụ; giới hạn 31 ngày mỗi request | Có, chỉ gồm dữ liệu điện |
+| `GET /api/ai/v1/electricity?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD` | Công khai, không cần đăng nhập hoặc token | Đọc công tơ, trạng thái/lý do/ghi chú, thiết bị, checklist, mức dùng điện và metadata ảnh công tơ; tối đa 31 ngày mỗi request | Có, chỉ gồm dữ liệu điện và vận hành thiết bị |
 | `POST /api/recipe-cost/import` | Phiên owner | Xem trước hoặc nhập workbook `.xlsx` giá vốn; chế độ xác nhận sẽ ghi dữ liệu | Không. Có chế độ ghi dữ liệu và chứa giá vốn nhạy cảm |
 | `GET /inventory/export?from=YYYY-MM-DD&to=YYYY-MM-DD` | Phiên owner | Tải workbook lịch sử kho; tối đa 366 ngày mỗi lần | Không phải API JSON; chỉ dùng trong website để xuất file |
 
@@ -74,6 +74,11 @@ Schema `private` còn chứa một số bảng/trình trợ giúp nội bộ cho
 - Tổng bill là số lượng đơn/bill, không phải doanh thu. Doanh thu tiền tệ lưu bằng số nguyên VND.
 - Bluebook là số tổng để đối chiếu. `reconciliation_difference_vnd` theo phép tính Bluebook trừ doanh thu website; chênh lệch và ghi chú là dữ liệu đối chiếu, không tự sửa doanh thu.
 - Điện tháng ước tính = (chỉ số ca tối ngày cuối tháng − chỉ số ca sáng ngày đầu tháng) × 3.471 VND/kWh. Khi có bill điện, bill là chi phí điện dùng để tính; công tơ reset/giảm làm mất hiệu lực ước tính từ phép trừ đầu-cuối.
+- API điện trả trạng thái ghi nhận theo ca (`recorded`, `unable`, `unrecorded`; dữ liệu cũ có thể là `legacy_recorded_without_metadata`), giờ đọc, kWh, lý do chưa đọc được và ghi chú bất thường. `usageKwh.operatingHours` là mức tăng từ sáng đến tối; `overnight` là từ tối đến sáng hôm sau; `total` là mức dùng cả ngày khi đủ chỉ số và không có số công tơ giảm.
+- Nhật ký thiết bị được chia theo `morning` và `evening`: trạng thái chạy, giờ bật/tắt, ngày bật/tắt, thời gian hoạt động tính bằng phút, có kéo sang ngày sau, còn chạy qua đêm, còn chạy sau đóng cửa và ghi chú. `deviceCatalog` là danh mục cấu hình hiện tại; `isActive` cho biết thiết bị còn được theo dõi, không phải thiết bị đang bật. Tên và loại thiết bị trong nhật ký là thông tin được lưu tại thời điểm ghi để giữ đúng lịch sử.
+- `startedAt`/`endedAt` có dạng `HH:mm` theo giờ Việt Nam; `startedOn`/`endedOn` là ngày tương ứng dạng `YYYY-MM-DD`. `durationMinutes` chỉ tính cho thiết bị `timed` đang `running` và có khoảng giờ hợp lệ. Thiết bị chạy liên tục, thiếu giờ hoặc giờ chưa hợp lệ trả `null`, không tự giả định chạy 24 giờ. Thời gian này là một khoảng được nhân viên ghi nhận, không phải số đo công suất hay kWh riêng của từng thiết bị; không cộng trùng khoảng sáng/tối nếu chúng chồng nhau.
+- `devices.morning`/`devices.evening` chỉ chứa nhật ký đã được lưu. Thiết bị không có trong danh sách ca nghĩa là chưa có nhật ký, không được suy ra là không sử dụng. `status: "not_running"` mới là nhân viên đã xác nhận không dùng. API đọc đầy đủ các trang dữ liệu để không cắt mất nhật ký khi truy vấn nhiều ngày.
+- `closingChecklist` gồm xác nhận tắt thiết bị không cần thiết, kiểm tra cửa tủ mát/tủ đông và nhân viên tự xác nhận đã chụp công tơ; giá trị `null` nghĩa là chưa xác nhận. `meterPhotos` chỉ có chú thích và thời điểm tải ảnh theo ca; không có nội dung ảnh hoặc URL riêng tư.
 - Thuê, lương, nước, bill điện và điều chỉnh chi phí tháng được phân bổ theo số ngày lịch trong tháng, giữ nguyên tổng sau khi chia. Chi phí phát sinh nhập theo ngày.
 - Lợi nhuận tháng/năm = doanh thu − chi phí hoạt động − khoản admin đã ghi nhận vào lợi nhuận − COGS tháng từ POS. Tuần/khoảng ngày hiển thị lợi nhuận trước COGS vì COGS chỉ có số theo tháng. Phiếu mua admin chỉ được tính khi owner ghi nhận/post vào lợi nhuận; không tự cộng mọi phiếu mua.
 - Khoản mua vật tư/nguyên liệu trong sổ ứng tiền theo dõi số admin tự ứng và hoàn ứng; nguyên liệu nhập kho không tự cộng vào lợi nhuận. Chi phí nhân viên trả từ doanh thu quán được ghi riêng trong sổ ngày.
@@ -81,7 +86,7 @@ Schema `private` còn chứa một số bảng/trình trợ giúp nội bộ cho
 
 ## 6. Tích hợp AI ngoài phạm vi số điện
 
-Endpoint điện đã có trong mã nguồn. Nếu sau này cần AI đọc doanh thu, lợi nhuận, khoản mua, kho hoặc giá vốn, các API bên dưới vẫn chỉ là **đề xuất, chưa được triển khai**; không mở rộng endpoint điện công khai sang các miền dữ liệu này.
+Endpoint điện hỗ trợ AI đọc nhật ký công tơ và thiết bị. Nếu sau này cần AI đọc doanh thu, lợi nhuận, khoản mua, kho hoặc giá vốn, các API bên dưới vẫn chỉ là **đề xuất, chưa được triển khai**; endpoint điện không trả các miền dữ liệu đó.
 
 Bot gọi endpoint điện bằng HTTP GET, không cần header xác thực. Để lấy một ngày, truyền cùng ngày ở `fromDate` và `toDate`:
 
@@ -91,7 +96,73 @@ GET https://betea-revenue-management.vercel.app/api/ai/v1/electricity?fromDate=2
 
 Có thể truy vấn nhiều ngày bằng cách đặt ngày bắt đầu ở `fromDate` và ngày kết thúc ở `toDate` (tối đa 31 ngày, định dạng `YYYY-MM-DD`). Không cần cấu hình token hoặc gửi Authorization header.
 
-Phản hồi có `timezone`, đơn vị `kWh`, thời điểm tạo và `items`. Mỗi item có `status` là `complete`, `missing_reading`, `meter_decrease` hoặc `no_record`, ba số đọc công tơ và mức dùng trong giờ hoạt động, qua đêm, tổng ngày. Tổng ngày chưa hoàn tất nếu chưa có chỉ số sáng hôm sau.
+Phản hồi có `apiVersion`, `timezone`, đơn vị `kWh`, `generatedAt`, `deviceCatalog` và `items`. Mỗi item giữ các trường cũ `status`, `readingsKwh` và `usageKwh` để bot đang dùng không bị hỏng. Các trường mới là `readings` (trạng thái/giờ/kWh/lý do/ghi chú sáng và tối), `devices` theo ca, `closingChecklist` và `meterPhotos` theo ca. Ngày không có bản ghi mang `status: "no_record"`. Tổng kWh ngày chưa hoàn tất nếu thiếu chỉ số sáng hôm sau hoặc phát hiện công tơ giảm.
+
+Ví dụ cấu trúc dữ liệu mới:
+
+```json
+{
+  "apiVersion": "2",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "unit": "kWh",
+  "fromDate": "2026-10-15",
+  "toDate": "2026-10-15",
+  "generatedAt": "2026-10-16T03:00:00.000Z",
+  "deviceCatalog": [
+    { "id": "...", "name": "Điều hòa", "mode": "timed", "sortOrder": 10, "isActive": true }
+  ],
+  "items": [
+    {
+      "date": "2026-10-15",
+      "recordStatus": "has_record",
+      "status": "complete",
+      "readings": {
+        "morning": { "status": "recorded", "recordedAt": "07:00", "kwh": 15230.5, "unavailableReason": null, "note": null },
+        "evening": { "status": "recorded", "recordedAt": "22:00", "kwh": 15242.1, "unavailableReason": null, "note": null }
+      },
+      "readingsKwh": { "morning": 15230.5, "evening": 15242.1, "nextMorning": 15244.0 },
+      "usageKwh": { "operatingHours": 11.6, "overnight": 1.9, "total": 13.5 },
+      "devices": {
+        "morning": [],
+        "evening": [
+          {
+            "deviceId": "...",
+            "name": "Điều hòa",
+            "mode": "timed",
+            "status": "running",
+            "startedAt": "20:00",
+            "endedAt": "00:30",
+            "startedOn": "2026-10-15",
+            "endedOn": "2026-10-16",
+            "durationMinutes": 270,
+            "endsNextDay": true,
+            "ranFromPreviousNight": null,
+            "remainsOnAfterClose": true,
+            "note": "Tắt sau khi kết thúc sự kiện"
+          }
+        ]
+      },
+      "closingChecklist": { "turnedOffUnneeded": true, "checkedCoolerDoors": true, "meterPhotoConfirmed": true },
+      "meterPhotos": { "morning": [], "evening": [] }
+    }
+  ]
+}
+```
+
+Các trường thiết bị dành cho bot:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `deviceId`, `name` | Mã thiết bị và tên tại thời điểm ghi |
+| `mode` | `timed`: theo dõi giờ bật/tắt; `continuous`: thiết bị chạy liên tục |
+| `status` | `running`: có sử dụng; `not_running`: đã xác nhận không dùng |
+| `startedAt`, `endedAt` | Giờ bật/tắt, dạng `HH:mm`; `null` nếu chưa biết hoặc không áp dụng |
+| `startedOn`, `endedOn` | Ngày của hai mốc giờ, giúp xác định khoảng chạy qua nửa đêm |
+| `durationMinutes` | Số phút theo khoảng giờ đã nhập; `null` khi không đủ dữ liệu để tính |
+| `endsNextDay` | Giờ tắt ca tối nằm ở ngày kế tiếp |
+| `ranFromPreviousNight` | Xác nhận ca sáng: thiết bị còn chạy từ đêm trước |
+| `remainsOnAfterClose` | Xác nhận ca tối: thiết bị vẫn chạy sau khi đóng cửa |
+| `note` | Ghi chú sử dụng hoặc bất thường; `null` nếu không có |
 
 | Endpoint đề xuất | Trả về | Quyền mặc định |
 |---|---|---|
@@ -106,10 +177,10 @@ Contract nên dùng JSON versioned, VND là integer, ngày là `YYYY-MM-DD`, ph�
 
 ## 7. Yêu cầu bảo mật cho implementation tích hợp
 
-1. API này được chủ ý để công khai và không xác thực. Bất kỳ ai có URL đều có thể đọc dữ liệu điện của Betea trong phạm vi ngày hỗ trợ; không đưa dữ liệu riêng tư khác vào response này.
-2. Endpoint tự khóa `owner_id`, chỉ chọn hai cột chỉ số điện, chỉ hỗ trợ GET và giới hạn tối đa 31 ngày mỗi lần. Chưa có rate limit hay audit log riêng cho các lần đọc API.
+1. API này được chủ ý để công khai và không xác thực. Bất kỳ ai có URL đều có thể đọc dữ liệu điện, thiết bị và ghi chú vận hành của Betea trong phạm vi ngày hỗ trợ; không đưa doanh thu, lợi nhuận, email/tên nhân viên, khoản mua hoặc dữ liệu riêng tư khác vào response này.
+2. Endpoint tự khóa `owner_id`, chỉ chọn các cột điện/thiết bị liên quan, chỉ hỗ trợ GET và giới hạn tối đa 31 ngày mỗi lần. Chưa có rate limit hay audit log riêng cho các lần đọc API.
 3. Supabase service-role key chỉ được dùng trong route phía server và không được trả về cho bên AI. Không cấp quyền database, quyền RPC hay public bucket cho bot.
-4. Dữ liệu API không gồm doanh thu, lợi nhuận, nhân viên, COGS, khoản mua, ảnh hoặc chứng từ.
+4. Dữ liệu API không gồm doanh thu, lợi nhuận, thông tin nhận diện nhân viên, COGS, khoản mua, ảnh gốc, object path hoặc signed URL. Metadata ảnh công tơ chỉ gồm ca, chú thích và thời điểm tải lên.
 5. Phản hồi không được cache (`Cache-Control: private, no-store, max-age=0`).
 
 ## 8. Thông tin cần bên làm AI nhận
