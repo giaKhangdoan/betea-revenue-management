@@ -682,7 +682,59 @@ button { color: inherit; }
 .electricity-device-heading { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .electricity-device-heading strong { font-size: 14px; font-weight: 620; line-height: 1.45; }
 .electricity-device-heading small { color: var(--muted); font-size: 12px; line-height: 1.5; }
-.electricity-reading-grid, .electricity-time-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); align-items: start; gap: 12px; }
+.electricity-meter-section, .electricity-operating-time { display: grid; gap: 12px; min-width: 0; }
+.electricity-meter-section h3 { margin: 0; font-size: 15px; font-weight: 620; }
+.electricity-meter-section .section-heading { align-items: start; gap: 12px; }
+.electricity-meter-section .section-heading p { max-width: 52ch; line-height: 1.55; font-size: 12px; }
+.electricity-meter-mode { display: flex; flex-wrap: wrap; gap: 8px; }
+.electricity-meter-mode button { min-height: 44px; border: 1px solid var(--line); border-radius: 5px; background: #fff; padding: 8px 14px; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px; }
+.electricity-meter-mode button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+.electricity-meter-mode button:hover:not(:disabled) { border-color: var(--accent); }
+.electricity-meter-mode button:disabled { cursor: not-allowed; opacity: .65; }
+.electricity-meter-mode button:focus-visible { outline: 3px solid rgb(92 138 112 / 25%); outline-offset: 2px; }
+.electricity-reading-time { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.electricity-reading-time > .text-button { justify-self: start; min-height: 44px; }
+.electricity-clock-field input[type="text"] { font-variant-numeric: tabular-nums; font-size: 17px; letter-spacing: .02em; }
+.electricity-clock-field input[aria-invalid="true"] { border-color: var(--danger); }
+.electricity-clock-field .form-error { margin: 0; font-size: 12px; line-height: 1.5; }
+.electricity-meter-help { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
+.electricity-meter-help small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.electricity-meter-help > .text-button { min-height: 44px; }
+.electricity-choice-field { min-width: 0; margin: 0; border: 0; padding: 0; }
+.electricity-choice-field legend { margin-bottom: 8px; padding: 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.electricity-choice-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.electricity-choice { position: relative; display: block; min-width: 0; cursor: pointer; }
+.electricity-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.electricity-choice > span { display: flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--line); border-radius: 5px; background: #fff; padding: 8px 10px; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.electricity-choice input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+.electricity-choice:hover > span { border-color: var(--accent); }
+.electricity-choice input:focus-visible + span { outline: 3px solid rgb(92 138 112 / 25%); outline-offset: 2px; }
+.electricity-choice input:disabled + span { cursor: not-allowed; opacity: .65; }
+.electricity-next-day { gap: 10px; align-items: flex-start; min-height: 44px; padding: 4px 0; font-size: 12px; }
+.electricity-next-day input { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; }
+.electricity-next-day span { display: grid; gap: 3px; line-height: 1.5; }
+.electricity-next-day small { color: var(--muted); font-weight: 400; }
+.electricity-duration { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 12px; margin: 0; border-radius: 4px; background: #eff4f1; padding: 9px 10px; font-size: 12px; }
+.electricity-duration span { color: var(--muted); }
+.electricity-duration strong { color: var(--accent-strong); font-weight: 600; }
+.electricity-note-disclosure { min-width: 0; border-top: 1px solid var(--line); }
+.electricity-note-disclosure > summary { display: list-item; min-height: 44px; padding: 12px 0; color: var(--muted); cursor: pointer; font-size: 12px; }
+.electricity-note-disclosure > summary:hover { color: var(--ink); }
+.electricity-note-disclosure > summary:focus-visible, .electricity-catalog-add > summary:focus-visible, .electricity-catalog-item > summary:focus-visible { outline: 3px solid rgb(92 138 112 / 25%); outline-offset: 2px; border-radius: 4px; }
+.electricity-note-disclosure > .field { margin-bottom: 4px; }
+.electricity-clear-choice { justify-self: start; min-height: 44px; font-size: 11px; }
+.electricity-edit-reason { border: 1px solid #e5ddca; border-radius: 5px; background: #fffdf6; padding: 12px; }
+.electricity-edit-reason > small, .electricity-settings-form .field > small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.electricity-catalog-add > summary { display: list-item; min-height: 44px; padding: 12px 0; color: var(--accent-strong); cursor: pointer; font-size: 13px; font-weight: 600; }
+.electricity-catalog-list { border-top: 1px solid var(--line); }
+.electricity-catalog-item { border-bottom: 1px solid var(--line); }
+.electricity-catalog-item > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 12px 0; cursor: pointer; }
+.electricity-catalog-item > summary > span:first-child { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
+.electricity-catalog-item > summary strong { font-size: 13px; font-weight: 600; }
+.electricity-catalog-item > summary small { color: var(--muted); font-size: 12px; }
+.electricity-catalog-edit-label { flex: 0 0 auto; color: var(--accent-strong); font-size: 12px; }
+.electricity-catalog-item > .electricity-settings-form { margin-bottom: 14px; }
+.electricity-reading-grid, .electricity-time-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
 .electricity-time-grid > .inventory-checkbox { grid-column: 1 / -1; }
 .electricity-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 12px; }
 .electricity-device-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
