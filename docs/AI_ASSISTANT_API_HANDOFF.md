@@ -77,6 +77,7 @@ Schema `private` còn chứa một số bảng/trình trợ giúp nội bộ cho
 - API điện trả trạng thái ghi nhận theo ca (`recorded`, `unable`, `unrecorded`; dữ liệu cũ có thể là `legacy_recorded_without_metadata`), giờ đọc, kWh, lý do chưa đọc được và ghi chú bất thường. `usageKwh.operatingHours` là mức tăng từ sáng đến tối; `overnight` là từ tối đến sáng hôm sau; `total` là mức dùng cả ngày khi đủ chỉ số và không có số công tơ giảm.
 - Nhật ký thiết bị được chia theo `morning` và `evening`: trạng thái chạy, giờ bật/tắt, ngày bật/tắt, thời gian hoạt động tính bằng phút, có kéo sang ngày sau, còn chạy qua đêm, còn chạy sau đóng cửa và ghi chú. `deviceCatalog` là danh mục cấu hình hiện tại; `isActive` cho biết thiết bị còn được theo dõi, không phải thiết bị đang bật. Tên và loại thiết bị trong nhật ký là thông tin được lưu tại thời điểm ghi để giữ đúng lịch sử.
 - `startedAt`/`endedAt` có dạng `HH:mm` theo giờ Việt Nam; `startedOn`/`endedOn` là ngày tương ứng dạng `YYYY-MM-DD`. `durationMinutes` chỉ tính cho thiết bị `timed` đang `running` và có khoảng giờ hợp lệ. Thiết bị chạy liên tục, thiếu giờ hoặc giờ chưa hợp lệ trả `null`, không tự giả định chạy 24 giờ. Thời gian này là một khoảng được nhân viên ghi nhận, không phải số đo công suất hay kWh riêng của từng thiết bị; không cộng trùng khoảng sáng/tối nếu chúng chồng nhau.
+- `deviceOperations` là danh sách thiết bị phẳng theo ngày để AI dễ đọc giờ hoạt động. Mỗi dòng có `recordedInPeriod`, `deviceName`, `status`, `startDateTime` và `endDateTime`; giờ đầy đủ mang múi giờ `+07:00`. Trường này bổ sung cho `devices.morning`/`devices.evening`, không thay thế chúng.
 - `devices.morning`/`devices.evening` chỉ chứa nhật ký đã được lưu. Thiết bị không có trong danh sách ca nghĩa là chưa có nhật ký, không được suy ra là không sử dụng. `status: "not_running"` mới là nhân viên đã xác nhận không dùng. API đọc đầy đủ các trang dữ liệu để không cắt mất nhật ký khi truy vấn nhiều ngày.
 - `closingChecklist` gồm xác nhận tắt thiết bị không cần thiết, kiểm tra cửa tủ mát/tủ đông và nhân viên tự xác nhận đã chụp công tơ; giá trị `null` nghĩa là chưa xác nhận. `meterPhotos` chỉ có chú thích và thời điểm tải ảnh theo ca; không có nội dung ảnh hoặc URL riêng tư.
 - Thuê, lương, nước, bill điện và điều chỉnh chi phí tháng được phân bổ theo số ngày lịch trong tháng, giữ nguyên tổng sau khi chia. Chi phí phát sinh nhập theo ngày.
@@ -96,7 +97,9 @@ GET https://betea-revenue-management.vercel.app/api/ai/v1/electricity?fromDate=2
 
 Có thể truy vấn nhiều ngày bằng cách đặt ngày bắt đầu ở `fromDate` và ngày kết thúc ở `toDate` (tối đa 31 ngày, định dạng `YYYY-MM-DD`). Không cần cấu hình token hoặc gửi Authorization header.
 
-Phản hồi có `apiVersion`, `timezone`, đơn vị `kWh`, `generatedAt`, `deviceCatalog` và `items`. Mỗi item giữ các trường cũ `status`, `readingsKwh` và `usageKwh` để bot đang dùng không bị hỏng. Các trường mới là `readings` (trạng thái/giờ/kWh/lý do/ghi chú sáng và tối), `devices` theo ca, `closingChecklist` và `meterPhotos` theo ca. Ngày không có bản ghi mang `status: "no_record"`. Tổng kWh ngày chưa hoàn tất nếu thiếu chỉ số sáng hôm sau hoặc phát hiện công tơ giảm.
+Phản hồi có `apiVersion`, `timezone`, đơn vị `kWh`, `generatedAt`, `interpretationGuidance`, `deviceCatalog` và `items`. Mỗi item giữ các trường cũ `status`, `readingsKwh` và `usageKwh` để bot đang dùng không bị hỏng. Các trường mới là `readings` (trạng thái/giờ/kWh/lý do/ghi chú sáng và tối), `devices` theo ca, `deviceOperations` dạng phẳng, `closingChecklist` và `meterPhotos` theo ca. Ngày không có bản ghi mang `status: "no_record"`. Tổng kWh ngày chưa hoàn tất nếu thiếu chỉ số sáng hôm sau hoặc phát hiện công tơ giảm.
+
+Khi kết nối endpoint với trợ lý AI, yêu cầu trợ lý đọc `interpretationGuidance` trước khi phân tích. Cụ thể, `readings.*.recordedAt` chỉ là giờ nhân viên đọc công tơ. Giờ bật/tắt thiết bị nằm ở `items[].deviceOperations[].startDateTime` và `endDateTime`. Đây là nhật ký thời gian do nhân viên ghi, không phải phép đo kWh riêng của thiết bị. Nếu hai ca ghi khoảng giờ chồng nhau, không cộng thời lượng hai dòng.
 
 Ví dụ cấu trúc dữ liệu mới:
 
@@ -108,6 +111,10 @@ Ví dụ cấu trúc dữ liệu mới:
   "fromDate": "2026-10-15",
   "toDate": "2026-10-15",
   "generatedAt": "2026-10-16T03:00:00.000Z",
+  "interpretationGuidance": [
+    "Giờ recordedAt chỉ là giờ đọc công tơ; dùng deviceOperations để đọc giờ bật và tắt thiết bị.",
+    "Khoảng giờ thiết bị là nhật ký nhân viên ghi, không phải kWh riêng của thiết bị. Không cộng các khoảng thời gian chồng nhau."
+  ],
   "deviceCatalog": [
     { "id": "...", "name": "Điều hòa", "mode": "timed", "sortOrder": 10, "isActive": true }
   ],
@@ -122,8 +129,40 @@ Ví dụ cấu trúc dữ liệu mới:
       },
       "readingsKwh": { "morning": 15230.5, "evening": 15242.1, "nextMorning": 15244.0 },
       "usageKwh": { "operatingHours": 11.6, "overnight": 1.9, "total": 13.5 },
+      "deviceOperations": [
+        {
+          "recordedInPeriod": "morning",
+          "deviceId": "...",
+          "deviceName": "Điều hòa quán 1",
+          "mode": "timed",
+          "status": "running",
+          "startDateTime": "2026-10-15T04:30:00+07:00",
+          "endDateTime": "2026-10-15T12:00:00+07:00",
+          "durationMinutes": 450,
+          "endsNextDay": false,
+          "ranFromPreviousNight": false,
+          "remainsOnAfterClose": null,
+          "note": null
+        }
+      ],
       "devices": {
-        "morning": [],
+        "morning": [
+          {
+            "deviceId": "...",
+            "name": "Điều hòa quán 1",
+            "mode": "timed",
+            "status": "running",
+            "startedAt": "04:30",
+            "endedAt": "12:00",
+            "startedOn": "2026-10-15",
+            "endedOn": "2026-10-15",
+            "durationMinutes": 450,
+            "endsNextDay": false,
+            "ranFromPreviousNight": false,
+            "remainsOnAfterClose": null,
+            "note": null
+          }
+        ],
         "evening": [
           {
             "deviceId": "...",
@@ -186,3 +225,9 @@ Contract nên dùng JSON versioned, VND là integer, ngày là `YYYY-MM-DD`, ph�
 ## 8. Thông tin cần bên làm AI nhận
 
 Có thể gửi tài liệu này để mô tả cấu trúc và semantics. Sau khi phiên bản API được deploy, chuyển URL endpoint cho bot. Endpoint công khai nên không cần token, mật khẩu, cookie hay khóa Supabase.
+
+Có thể thêm chỉ dẫn sau vào cấu hình trợ lý:
+
+```text
+Khi đọc API điện, hãy đọc interpretationGuidance trước. Giờ đọc công tơ nằm trong readings.*.recordedAt; giờ bật/tắt của thiết bị nằm trong deviceOperations[].startDateTime và endDateTime. Luôn nêu tên thiết bị, ca ghi nhận và ngày giờ địa phương. Không suy ra kWh riêng cho từng thiết bị từ tổng công tơ, và không cộng thời lượng các khoảng bị chồng nhau. Nếu hai ca ghi khác nhau hoặc chồng nhau, hãy nêu rõ là nhật ký cần đối chiếu thay vì tự chọn một khoảng.
+```

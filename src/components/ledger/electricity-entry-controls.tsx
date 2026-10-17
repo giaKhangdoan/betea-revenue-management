@@ -78,16 +78,20 @@ export function ElectricityBatchProgress({ batch }: { batch: DeviceBatch }) {
   </p>;
 }
 
-export function ElectricityBatchNavigation({ batch, period, canSave, busy, saveDisabled = false }: {
+export function ElectricityBatchNavigation({ batch, period, canSave, busy, saveDisabled = false, allowBrowseWithoutSave = false, browseDisabled = false }: {
   batch: DeviceBatch;
   period: "morning" | "evening";
   canSave: boolean;
   busy: boolean;
   saveDisabled?: boolean;
+  allowBrowseWithoutSave?: boolean;
+  browseDisabled?: boolean;
 }) {
   return <div className="electricity-batch-actions">
     {batch.pageCount > 1 ? <button className="button button-secondary" type="button" disabled={busy || batch.pageIndex === 0} onClick={batch.previous}>Quay lại</button> : null}
     {canSave ? <button className="button" type="submit" disabled={busy || saveDisabled}>{busy ? "Đang lưu…" : batch.isLast ? `Lưu ca ${period === "morning" ? "sáng" : "tối"}` : "Lưu và tiếp tục"}</button>
       : !batch.isLast ? <button className="button button-secondary" type="button" disabled={busy} onClick={batch.next}>Xem nhóm tiếp</button> : null}
+    {canSave && allowBrowseWithoutSave && !batch.isLast ? <button className="button button-secondary" type="button" disabled={busy || browseDisabled} onClick={batch.next}>Xem nhóm tiếp</button> : null}
+    {canSave && allowBrowseWithoutSave && !batch.isLast && browseDisabled ? <small className="electricity-batch-hint">Lưu thay đổi của nhóm này trước khi chuyển tiếp.</small> : null}
   </div>;
 }

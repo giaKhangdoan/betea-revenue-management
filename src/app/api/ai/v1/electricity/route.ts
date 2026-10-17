@@ -207,6 +207,10 @@ export async function GET(request: Request) {
     const usage = current
       ? calculateDailyElectricityUsage({ morningKwh, eveningKwh, nextMorningKwh })
       : null;
+    const dailyDeviceLogs = deviceLogsByDate.get(date) ?? { morning: [], evening: [] };
+    const deviceOperations = (['morning', 'evening'] as const).flatMap((period) =>
+      dailyDeviceLogs[period].map((device) => serializeDeviceOperation(period, device)),
+    );
 
     return {
       date,
@@ -223,7 +227,10 @@ export async function GET(request: Request) {
         overnight: usage?.overnightKwh ?? null,
         total: usage?.fullDayKwh ?? null,
       },
-      devices: deviceLogsByDate.get(date) ?? { morning: [], evening: [] },
+      devices: dailyDeviceLogs,
+      // Flat schedule rows make it easier for external AI clients to find
+      // device operating times without confusing them with meter-read times.
+      deviceOperations,
       closingChecklist: {
         turnedOffUnneeded: current?.electricity_evening_turned_off_unneeded ?? null,
         checkedCoolerDoors: current?.electricity_evening_checked_cooler_doors ?? null,
@@ -240,6 +247,12 @@ export async function GET(request: Request) {
     fromDate: range.from,
     toDate: range.to,
     generatedAt: new Date().toISOString(),
+    interpretationGuidance: [
+      "readings.morning.recordedAt và readings.evening.recordedAt chỉ là giờ đọc công tơ, không phải giờ bật/tắt thiết bị.",
+      "Dùng items[].deviceOperations để đọc khoảng thời gian thiết bị hoạt động do nhân viên ghi nhận. startDateTime và endDateTime là ngày giờ Asia/Ho_Chi_Minh, có múi giờ +07:00.",
+      "Khoảng hoạt động thiết bị là nhật ký do nhân viên ghi, không phải số đo kWh riêng của từng thiết bị. Không phân bổ tổng kWh của cửa hàng cho một thiết bị.",
+      "Nhật ký sáng và tối của cùng thiết bị có thể chồng giờ. Không cộng thời lượng bị chồng lấn; nếu dữ liệu khác nhau hoặc chồng nhau, nêu rõ cần đối chiếu.",
+    ],
     deviceCatalog: devices.map((device) => ({
       id: device.id,
       name: device.name,
@@ -273,6 +286,24 @@ function serializeDeviceLog(log: DeviceLogRow) {
     ranFromPreviousNight: log.ran_from_previous_night,
     remainsOnAfterClose: log.remains_on_after_close,
     note: log.note,
+  };
+}
+
+function serializeDeviceOperation(period: "morning" | "evening", device: ReturnType<typeof serializeDeviceLog>) {
+  const localDateTime = (date: string | null, time: string | null) => date && time ? `${date}T${time}:00+07:00` : null;
+  return {
+    recordedInPeriod: period,
+    deviceId: device.deviceId,
+    deviceName: device.name,
+    mode: device.mode,
+    status: device.status,
+    startDateTime: localDateTime(device.startedOn, device.startedAt),
+    endDateTime: localDateTime(device.endedOn, device.endedAt),
+    durationMinutes: device.durationMinutes,
+    endsNextDay: device.endsNextDay,
+    ranFromPreviousNight: device.ranFromPreviousNight,
+    remainsOnAfterClose: device.remainsOnAfterClose,
+    note: device.note,
   };
 }
 

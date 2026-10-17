@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { electricityDurationMinutes, normalizeElectricityTime } from "@/lib/electricity/time-input";
+import { electricityDeviceTimeError } from "@/lib/electricity/device-time-validation";
 
 export type ElectricityDeviceValue = {
   operating_status: "unrecorded" | "not_running" | "running";
@@ -56,7 +57,7 @@ function ElectricityTimeField({ label, name, value, disabled, required = false, 
   const id = useId();
   const [showError, setShowError] = useState(false);
   const normalized = normalizeElectricityTime(value);
-  const invalid = showError && ((!value && required) || Boolean(value && !normalized));
+  const invalid = (showError && !value && required) || Boolean(value && !normalized);
   return <label className="field electricity-clock-field" htmlFor={id}>
     <span>{label}</span>
     {name ? <input type="hidden" name={name} value={normalized ?? value} /> : null}
@@ -122,13 +123,14 @@ function BooleanChoice({ label, value, disabled, onChange }: {
   </fieldset>;
 }
 
-export function ElectricityDeviceFields({ name, catalogName, mode, period, value, disabled, onChange }: {
+export function ElectricityDeviceFields({ name, catalogName, mode, period, value, disabled, validationActive = true, onChange }: {
   name: string;
   catalogName?: string;
   mode: "timed" | "continuous";
   period: "morning" | "evening";
   value: ElectricityDeviceValue;
   disabled: boolean;
+  validationActive?: boolean;
   onChange: (patch: Partial<ElectricityDeviceValue>) => void;
 }) {
   const id = useId();
@@ -137,10 +139,19 @@ export function ElectricityDeviceFields({ name, catalogName, mode, period, value
   const end = normalizeElectricityTime(value.ended_at);
   const fromPreviousNight = period === "morning" && value.ran_from_previous_night === "true" && Boolean(start && end && start > end);
   const duration = mode === "timed" && running ? electricityDurationMinutes(value.started_at, value.ended_at, (period === "evening" && value.ends_next_day) || fromPreviousNight) : null;
-  const validTimes = start && end;
   const showNextDayChoice = period === "evening" && Boolean(start && end && (end <= start || value.ends_next_day));
   const overOneDay = period === "evening" && value.ends_next_day && duration !== null && duration > 1440;
   const durationText = duration === null ? null : [Math.floor(duration / 60) ? `${Math.floor(duration / 60)} giờ` : "", duration % 60 ? `${duration % 60} phút` : ""].filter(Boolean).join(" ") || "0 phút";
+  const timeError = electricityDeviceTimeError({
+    period,
+    mode,
+    status: value.operating_status,
+    startedAt: value.started_at || null,
+    endedAt: value.ended_at || null,
+    endsNextDay: value.ends_next_day,
+    ranFromPreviousNight: value.ran_from_previous_night === "" ? null : value.ran_from_previous_night === "true",
+    remainsOnAfterClose: value.remains_on_after_close === "" ? null : value.remains_on_after_close === "true",
+  });
   return <div className="electricity-device-card" role="group" aria-label={name}>
     <div className="electricity-device-heading"><strong>{name}</strong><small>{mode === "timed" ? "Ghi giờ bật / tắt" : "Thiết bị chạy liên tục"}{catalogName && catalogName !== name ? ` · hiện tại: ${catalogName}` : ""}</small></div>
     <fieldset className="electricity-choice-field" disabled={disabled}>
@@ -151,12 +162,14 @@ export function ElectricityDeviceFields({ name, catalogName, mode, period, value
     </fieldset>
     {running && mode === "timed" ? <div className="electricity-operating-time">
       <div className="electricity-time-grid">
-        <ElectricityTimeField label="Bật lúc" value={value.started_at} placeholder={period === "morning" ? "08:00" : "14:00"} required disabled={disabled} onChange={(started_at) => onChange({ started_at })} />
-        <ElectricityTimeField label="Tắt lúc" value={value.ended_at} placeholder={period === "morning" ? "12:00" : "22:00"} required disabled={disabled} onChange={(ended_at) => onChange({ ended_at })} />
+        <ElectricityTimeField label="Bật lúc" value={value.started_at} placeholder={period === "morning" ? "08:00" : "14:00"} required={validationActive && (period === "evening" || value.ran_from_previous_night !== "true")} disabled={disabled} onChange={(started_at) => onChange({ started_at })} />
+        <ElectricityTimeField label="Tắt lúc" value={value.ended_at} placeholder={period === "morning" ? "12:00" : "22:00"} required={validationActive && (period === "morning" || value.remains_on_after_close !== "true")} disabled={disabled} onChange={(ended_at) => onChange({ ended_at })} />
       </div>
-      <small className="form-note">{period === "morning" ? "Ví dụ: 08:00 → 12:00 là 4 giờ." : "Ví dụ: 14:00 → 22:00 là 8 giờ."} Có thể gõ 0800 để nhập 08:00.</small>
+      <small className="form-note">{period === "morning" ? "Ví dụ: 08:00 → 12:00 là 4 giờ. Nếu đã bật từ tối qua, chọn mục bên dưới; giờ bật có thể để trống." : "Ví dụ: 14:00 → 22:00 là 8 giờ."} Có thể gõ 0800 để nhập 08:00.</small>
+      {period === "evening" && value.remains_on_after_close === "true" && !end ? <p className="form-note">Chưa biết giờ tắt thì để trống; xác nhận thiết bị vẫn chạy sau khi đóng cửa.</p> : null}
       {showNextDayChoice ? <label className="inventory-checkbox electricity-next-day"><input type="checkbox" checked={value.ends_next_day} disabled={disabled} onChange={(event) => onChange({ ends_next_day: event.currentTarget.checked })} /><span>{overOneDay ? "Tắt vào ngày kế tiếp?" : "Tắt sau nửa đêm?"}<small>Bật {start} → tắt {end} vào ngày kế tiếp. Chỉ chọn nếu thiết bị chạy qua đêm.</small></span></label> : null}
-      {durationText ? <p className="electricity-duration" role="status"><span>Thời gian hoạt động</span><strong>{durationText}{value.ends_next_day && period === "evening" ? " · sang ngày kế tiếp" : fromPreviousNight ? " · từ đêm trước" : " · cùng ngày"}</strong></p> : validTimes ? <p className="form-error" role="status">{period === "evening" ? `Giờ tắt ${end} sớm hơn giờ bật ${start}. Nếu tắt vào ngày kế tiếp, tick “Tắt sau nửa đêm?”. Nếu không, kiểm tra lại giờ.` : "Giờ tắt đang sớm hơn giờ bật. Kiểm tra lại giờ hoặc xác nhận thiết bị chạy từ đêm trước."}</p> : null}
+      {durationText && !timeError ? <p className="electricity-duration" role="status"><span>Thời gian hoạt động</span><strong>{durationText}{value.ends_next_day && period === "evening" ? " · qua ngày" : fromPreviousNight ? " · từ đêm trước" : ""}</strong></p> : null}
+      {validationActive && timeError ? <p className="form-error" role="status">{timeError}</p> : null}
       {overOneDay ? <p className="form-error" role="status">Đang tính hơn 24 giờ vì giờ tắt là {end} ngày kế tiếp. Nếu tắt lúc {end} cùng ngày, bỏ tick mục trên.</p> : null}
     </div> : running ? <p className="form-note">Không cần nhập giờ bật/tắt cho thiết bị chạy liên tục.</p> : null}
     {running ? <BooleanChoice label={period === "morning" ? "Đã chạy từ đêm hôm trước?" : "Vẫn chạy sau khi đóng cửa?"} value={period === "morning" ? value.ran_from_previous_night : value.remains_on_after_close} disabled={disabled} onChange={(answer) => onChange(period === "morning" ? { ran_from_previous_night: answer } : { remains_on_after_close: answer })} /> : null}

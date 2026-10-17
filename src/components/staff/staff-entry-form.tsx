@@ -5,6 +5,7 @@ import { saveStaffElectricityPeriodAction, saveStaffEntryAction, type StaffEntry
 import { ActionMessage } from "@/components/ledger/action-message";
 import { ElectricityBatchNavigation, ElectricityBatchProgress, ElectricityClosingChecklist, ElectricityPeriodTabs, useElectricityDeviceBatch } from "@/components/ledger/electricity-entry-controls";
 import { ElectricityDeviceFields, ElectricityMeterFields, electricityDeviceInput, type ElectricityDeviceInput } from "@/components/ledger/electricity-input-fields";
+import { electricityDeviceTimeError } from "@/lib/electricity/device-time-validation";
 import { normalizeElectricityTime } from "@/lib/electricity/time-input";
 import { formatVnd } from "@/lib/finance/format";
 
@@ -172,6 +173,21 @@ function ElectricityPeriodForm({
   }, [deviceBatch, onSavePendingChange]);
   const [state, action, pending] = useActionState<StaffEntryActionState, FormData>(saveAndResetTouchedState, undefined);
   const canEdit = editable && !pending;
+  const invalidDeviceEdits = deviceBatch.visibleDevices.some((device) => {
+    const input = deviceInputs[device.id];
+    if (!input?.changed_fields.some((field) => field !== "note")) return false;
+    const saved = logMap.get(device.id);
+    return Boolean(electricityDeviceTimeError({
+      period,
+      mode: saved?.device_mode_snapshot ?? device.mode,
+      status: input.operating_status,
+      startedAt: input.started_at || null,
+      endedAt: input.ended_at || null,
+      endsNextDay: input.ends_next_day,
+      ranFromPreviousNight: input.ran_from_previous_night === "" ? null : input.ran_from_previous_night === "true",
+      remainsOnAfterClose: input.remains_on_after_close === "" ? null : input.remains_on_after_close === "true",
+    }));
+  });
 
   const updateDevice = (deviceId: string, patch: Partial<ElectricityDeviceInput>) => {
     setDeviceInputs((current) => {
@@ -240,12 +256,12 @@ function ElectricityPeriodForm({
         const saved = logMap.get(device.id);
         const effectiveName = saved?.device_name_snapshot ?? device.name;
         const effectiveMode = saved?.device_mode_snapshot ?? device.mode;
-        return input ? <ElectricityDeviceFields key={device.id} name={effectiveName} catalogName={device.name} mode={effectiveMode} period={period} value={input} disabled={!canEdit} onChange={(patch) => updateDevice(device.id, patch)} /> : null;
+        return input ? <ElectricityDeviceFields key={device.id} name={effectiveName} catalogName={device.name} mode={effectiveMode} period={period} value={input} disabled={!canEdit} validationActive={input.changed_fields.some((field) => field !== "note")} onChange={(patch) => updateDevice(device.id, patch)} /> : null;
       })}</div>}
     </section>
     {period === "evening" && deviceBatch.isLast ? <ElectricityClosingChecklist values={checklist} disabled={!canEdit} onChange={(key, checked) => setChecklist((current) => ({ ...current, [key]: { value: checked, touched: true } }))} /> : null}
     <details className="electricity-note-disclosure"><summary>{note ? "Xem / sửa ghi chú ca" : "Ghi chú ca / bất thường (nếu có)"}</summary><label className="field"><span>Ghi chú ca</span><textarea name="note" rows={2} maxLength={500} placeholder="Thiết bị quên tắt, máy chạy bất thường…" value={note} onChange={(event) => { setNote(event.currentTarget.value); setNoteTouched(true); }} disabled={!canEdit} /></label></details>
-    <ElectricityBatchNavigation batch={deviceBatch} period={period} canSave={editable} busy={pending} />
+    <ElectricityBatchNavigation batch={deviceBatch} period={period} canSave={editable} busy={pending} saveDisabled={invalidDeviceEdits} />
     <Feedback state={state} />
   </form>;
 }

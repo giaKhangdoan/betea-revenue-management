@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { currentBusinessDate, parseVnd } from "@/lib/finance/format";
 import { requireStaff } from "@/lib/auth/require-staff";
+import { electricityDeviceTimeError } from "@/lib/electricity/device-time-validation";
 
 export type StaffEntryActionState = { error?: string; success?: string } | undefined;
 
@@ -71,9 +72,10 @@ export async function saveStaffElectricityPeriodAction(
   formData: FormData,
 ): Promise<StaffEntryActionState> {
   const date = dateSchema.safeParse(textValue(formData, "business_date"));
-  const period = textValue(formData, "period");
+  const periodResult = z.enum(["morning", "evening"]).safeParse(textValue(formData, "period"));
   const status = textValue(formData, "status");
-  if (!date.success || !["morning", "evening"].includes(period)) return { error: "Ngày hoặc kỳ ghi điện không hợp lệ." };
+  if (!date.success || !periodResult.success) return { error: "Ngày hoặc kỳ ghi điện không hợp lệ." };
+  const period = periodResult.data;
 
   const staff = await requireStaff();
   if (!staff) return { error: "Tài khoản nhân viên không còn quyền truy cập hoặc phiên đã hết hạn." };
@@ -102,9 +104,6 @@ export async function saveStaffElectricityPeriodAction(
   const logs = logsResult.data;
   if (new Set(logs.map((log) => log.device_id)).size !== logs.length) return { error: "Danh sách thiết bị bị trùng. Hãy tải lại trang rồi thử lại." };
   for (const log of logs) {
-    if (log.operating_status === "running" && log.device_mode === "timed" && (!log.started_at || !log.ended_at)) {
-      return { error: "Thiết bị theo dõi giờ cần có cả giờ bật và giờ tắt." };
-    }
     if (log.device_mode === "continuous" && (log.started_at || log.ended_at || log.ends_next_day)) {
       return { error: "Thiết bị chạy liên tục không cần giờ bật/tắt." };
     }
@@ -113,6 +112,19 @@ export async function saveStaffElectricityPeriodAction(
     }
     if ((period === "morning" && log.remains_on_after_close !== null) || (period === "evening" && log.ran_from_previous_night !== null)) {
       return { error: "Thông tin thiết bị không khớp kỳ ghi điện." };
+    }
+    if (!log.changed_fields || log.changed_fields.some((field) => field !== "note")) {
+      const timeError = electricityDeviceTimeError({
+        period,
+        mode: log.device_mode,
+        status: log.operating_status,
+        startedAt: log.started_at,
+        endedAt: log.ended_at,
+        endsNextDay: log.ends_next_day,
+        ranFromPreviousNight: log.ran_from_previous_night,
+        remainsOnAfterClose: log.remains_on_after_close,
+      });
+      if (timeError) return { error: timeError };
     }
   }
 

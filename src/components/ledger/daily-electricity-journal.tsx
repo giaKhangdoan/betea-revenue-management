@@ -5,6 +5,7 @@ import { saveOwnerElectricityDeviceAction, saveOwnerElectricityPeriod, type Entr
 import { ActionMessage } from "@/components/ledger/action-message";
 import { ElectricityBatchNavigation, ElectricityBatchProgress, ElectricityClosingChecklist, ElectricityPeriodTabs, useElectricityDeviceBatch } from "@/components/ledger/electricity-entry-controls";
 import { ElectricityDeviceFields, ElectricityMeterFields, electricityDeviceInput, type ElectricityDeviceInput as DeviceInput } from "@/components/ledger/electricity-input-fields";
+import { electricityDeviceTimeError } from "@/lib/electricity/device-time-validation";
 import { normalizeElectricityTime } from "@/lib/electricity/time-input";
 import { calculateDailyElectricityUsage } from "@/lib/finance/calculations";
 
@@ -178,6 +179,25 @@ function ElectricityPeriodForm({
   const serializedChecklist = JSON.stringify(Object.fromEntries(Object.entries(checklist).map(([key, value]) => [key, deviceBatch.isLast && value.touched ? value.value : null])));
   const canEdit = !loadError && savingCount === 0 && !pending;
   const legacyReadingNeedsReview = status === "" && initialStatus == null && initialKwh != null;
+  const batchHasUnsavedChanges = deviceBatch.visibleDevices.some((device) => (deviceInputs[device.id]?.changed_fields.length ?? 0) > 0)
+    || meterFieldsTouched
+    || noteTouched
+    || resetReasonTouched;
+  const invalidDeviceEdits = deviceBatch.visibleDevices.some((device) => {
+    const input = deviceInputs[device.id];
+    if (!input?.changed_fields.some((field) => field !== "note")) return false;
+    const saved = logMap.get(device.id);
+    return Boolean(electricityDeviceTimeError({
+      period,
+      mode: saved?.device_mode_snapshot ?? device.mode,
+      status: input.operating_status,
+      startedAt: input.started_at || null,
+      endedAt: input.ended_at || null,
+      endsNextDay: input.ends_next_day,
+      ranFromPreviousNight: input.ran_from_previous_night === "" ? null : input.ran_from_previous_night === "true",
+      remainsOnAfterClose: input.remains_on_after_close === "" ? null : input.remains_on_after_close === "true",
+    }));
+  });
 
   return <form className="staff-single-form electricity-period-form" onSubmit={(event) => {
     event.preventDefault();
@@ -208,7 +228,7 @@ function ElectricityPeriodForm({
         const saved = logMap.get(device.id);
         const effectiveName = saved?.device_name_snapshot ?? device.name;
         const effectiveMode = saved?.device_mode_snapshot ?? device.mode;
-        return input ? <ElectricityDeviceFields key={device.id} name={effectiveName} catalogName={device.name} mode={effectiveMode} period={period} value={input} disabled={!canEdit} onChange={(patch) => updateDevice(device.id, patch)} /> : null;
+        return input ? <ElectricityDeviceFields key={device.id} name={effectiveName} catalogName={device.name} mode={effectiveMode} period={period} value={input} disabled={!canEdit} validationActive={input.changed_fields.some((field) => field !== "note")} onChange={(patch) => updateDevice(device.id, patch)} /> : null;
       })}</div>}
       {savedLogs.some((log) => !activeDevices.some((device) => device.id === log.device_id)) ? <div className="expense-list"><strong>Thiết bị đã ngừng theo dõi</strong>{savedLogs.filter((log) => !activeDevices.some((device) => device.id === log.device_id)).map((log) => <div className="expense-row" key={log.device_id}><span>{log.device_name_snapshot} · {log.operating_status === "running" ? "Có hoạt động" : "Không hoạt động"}</span><small>Đã lưu</small></div>)}</div> : null}
     </section>
@@ -216,7 +236,7 @@ function ElectricityPeriodForm({
     {period === "evening" && deviceBatch.isLast ? <ElectricityClosingChecklist values={checklist} disabled={!canEdit} onChange={(key, checked) => setChecklist((current) => ({ ...current, [key]: { value: checked, touched: true } }))} /> : null}
     <details className="electricity-note-disclosure"><summary>{note ? "Xem / sửa ghi chú ca" : "Ghi chú ca / bất thường (nếu có)"}</summary><label className="field"><span>Ghi chú ca</span><textarea name="note" rows={2} maxLength={500} placeholder="Thiết bị quên tắt, máy chạy bất thường…" value={note} onChange={(event) => { setNote(event.currentTarget.value); setNoteTouched(true); }} disabled={!canEdit} /></label></details>
     {isHistorical ? <label className="field electricity-edit-reason"><span>Lý do cập nhật ngày cũ <small>· bắt buộc</small></span><textarea name="edit_reason" rows={2} minLength={5} maxLength={500} value={editReason} onChange={(event) => { event.currentTarget.setCustomValidity(""); setEditReason(event.currentTarget.value); }} onInvalid={(event) => event.currentTarget.setCustomValidity("Nhập lý do cập nhật từ 5 ký tự để lưu ngày cũ.")} required disabled={!canEdit} placeholder="Ví dụ: Bổ sung giờ hoạt động từ Bluebook" /><small>Admin được sửa ngày cũ. Nhập lý do từ 5 ký tự để lưu lịch sử.</small></label> : null}
-    <ElectricityBatchNavigation batch={deviceBatch} period={period} canSave={!loadError} busy={savingCount > 0 || pending} />
+    <ElectricityBatchNavigation batch={deviceBatch} period={period} canSave={!loadError} busy={savingCount > 0 || pending} saveDisabled={invalidDeviceEdits} allowBrowseWithoutSave browseDisabled={batchHasUnsavedChanges} />
     <ActionMessage error={state?.error} success={state?.success} />
   </form>;
 }
