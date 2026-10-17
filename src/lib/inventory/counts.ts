@@ -1,5 +1,6 @@
 import type { createClient } from "@/lib/supabase/server";
 import { parseInventoryHistoryCursor, type InventoryReceipt } from "@/lib/inventory/receipts";
+import { readGroupedPages } from "@/lib/supabase/read-pages";
 
 type ServerSupabaseClient = NonNullable<Awaited<ReturnType<typeof createClient>>>;
 
@@ -596,18 +597,55 @@ export async function getFinalizedInventoryCountPage(
   const headers = rows.slice(0, limit);
   if (headers.length === 0) return { data: [], error: false, hasMore: false, nextCursor: null };
 
-  const itemResults = await Promise.all(headers.map((header) => supabase.from("inventory_count_items")
-    .select("item_id,item_name,large_unit,conversion_factor,small_unit,large_quantity,small_quantity,counted_quantity,sort_order")
-    .eq("owner_id", ownerId).eq("count_id", header.id)
-    .order("sort_order").order("item_id").limit(501)));
-  const versionResults = await Promise.all(headers.map((header) => supabase.from("inventory_count_versions")
-    .select("count_id,effective_at,sequence_no,event_type,actor_id,actor_label,reason,items_snapshot")
-    .eq("owner_id", ownerId).eq("count_id", header.id)
-    .order("effective_at", { ascending: false }).order("sequence_no", { ascending: false }).limit(101)));
-  const integrityResult = await supabase.from("inventory_history_backfill_status")
-    .select("entity_id,status,reason")
-    .eq("owner_id", ownerId).eq("entity_type", "count").in("entity_id", headers.map(({ id }) => id));
-  if (itemResults.some(({ error }) => error) || versionResults.some(({ error }) => error) || integrityResult.error) {
+  const countIds = headers.map(({ id }) => id);
+  type CountHistoryItemRow = {
+    count_id: string;
+    item_id: string;
+    item_name: string;
+    large_unit: string | null;
+    conversion_factor: string | number | null;
+    small_unit: string;
+    large_quantity: string | number | null;
+    small_quantity: string | number | null;
+    counted_quantity: string | number | null;
+    sort_order: number | null;
+  };
+  type CountVersionRow = {
+    count_id: string;
+    effective_at: string;
+    sequence_no: string | number;
+    event_type: string;
+    actor_id: string;
+    actor_label: string;
+    reason: string | null;
+    items_snapshot: unknown;
+  };
+  const [itemRead, versionRead, integrityResult] = await Promise.all([
+    readGroupedPages<CountHistoryItemRow>({
+      groupIds: countIds,
+      maxRowsPerGroup: 500,
+      getGroupId: (item: { count_id: string }) => item.count_id,
+      getRowId: (item: { item_id: string }) => item.item_id,
+      fetchPage: (ids, from, to) => supabase.from("inventory_count_items")
+        .select("count_id,item_id,item_name,large_unit,conversion_factor,small_unit,large_quantity,small_quantity,counted_quantity,sort_order")
+        .eq("owner_id", ownerId).in("count_id", ids)
+        .order("count_id").order("sort_order").order("item_id").range(from, to),
+    }),
+    readGroupedPages<CountVersionRow>({
+      groupIds: countIds,
+      maxRowsPerGroup: 100,
+      getGroupId: (version: { count_id: string }) => version.count_id,
+      getRowId: (version: { sequence_no: string | number }) => String(version.sequence_no),
+      fetchPage: (ids, from, to) => supabase.from("inventory_count_versions")
+        .select("count_id,effective_at,sequence_no,event_type,actor_id,actor_label,reason,items_snapshot")
+        .eq("owner_id", ownerId).in("count_id", ids)
+        .order("count_id").order("effective_at", { ascending: false }).order("sequence_no", { ascending: false }).range(from, to),
+    }),
+    supabase.from("inventory_history_backfill_status")
+      .select("entity_id,status,reason")
+      .eq("owner_id", ownerId).eq("entity_type", "count").in("entity_id", countIds),
+  ]);
+  if (itemRead.error || versionRead.error || integrityResult.error) {
     return { data: [], error: true, hasMore: false, nextCursor: null };
   }
 
@@ -615,11 +653,21 @@ export async function getFinalizedInventoryCountPage(
     status: row.status === "verified" ? "verified" as const : "unverified" as const,
     reason: row.reason,
   }]));
-  const data = headers.map((header, index) => {
-    const rawItems = itemResults[index].data ?? [];
-    const rawVersions = versionResults[index].data ?? [];
-    const items = rawItems.slice(0, 500) as InventoryMovementCountItem[];
-    const versions = rawVersions.slice(0, 100).map((row) => ({
+  const data = headers.map((header) => {
+    const rawItems = itemRead.rowsByGroup.get(header.id) ?? [];
+    const rawVersions = versionRead.rowsByGroup.get(header.id) ?? [];
+    const items: InventoryMovementCountItem[] = rawItems.map((item) => ({
+      item_id: item.item_id,
+      item_name: item.item_name,
+      large_unit: item.large_unit,
+      conversion_factor: item.conversion_factor,
+      small_unit: item.small_unit,
+      large_quantity: item.large_quantity,
+      small_quantity: item.small_quantity,
+      counted_quantity: item.counted_quantity,
+      sort_order: item.sort_order ?? undefined,
+    }));
+    const versions = rawVersions.map((row) => ({
       effective_at: row.effective_at,
       sequence_no: row.sequence_no,
       event_type: row.event_type,
@@ -632,7 +680,7 @@ export async function getFinalizedInventoryCountPage(
       ...header,
       finalized_at: header.finalized_at,
       items,
-      history_truncated: rawItems.length > 500 || rawVersions.length > 100,
+      history_truncated: itemRead.truncatedGroupIds.has(header.id) || versionRead.truncatedGroupIds.has(header.id),
       ...(versions.length ? { versions } : {}),
       ...(integrityByCount.has(header.id) ? { history_integrity: integrityByCount.get(header.id)! } : {}),
     };

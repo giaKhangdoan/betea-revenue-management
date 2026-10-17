@@ -87,7 +87,10 @@ describe("bounded inventory receipt pages", () => {
     expect(page.hasMore).toBe(true);
     expect(page.nextCursor).toEqual({ receivedAt: headers[1].received_at, id: headers[1].id });
     expect(queries.find((query) => query.table === "inventory_receipts")?.filters).toContainEqual(["limit", 3]);
-    expect(queries.filter((query) => query.table === "inventory_receipt_lines")).toHaveLength(2);
+    const lineQueries = queries.filter((query) => query.table === "inventory_receipt_lines");
+    expect(lineQueries).toHaveLength(1);
+    expect(lineQueries[0].filters).toContainEqual(["in", "receipt_id", headers.slice(0, 2).map(({ id }) => id)]);
+    expect(lineQueries[0].filters).toContainEqual(["range", 0, 499]);
     expect(queries.every((query) => !["inventory_counts", "inventory_count_versions", "inventory_receipt_versions", "inventory_receipt_corrections"].includes(query.table))).toBe(true);
   });
 
@@ -102,8 +105,11 @@ describe("bounded inventory receipt pages", () => {
     expect(queries.find((query) => query.table === "inventory_receipts")?.filters).toContainEqual([
       "or", `received_at.lt.${cursor.beforeAt},and(received_at.eq.${cursor.beforeAt},id.lt.${cursor.beforeId})`,
     ]);
-    expect(queries.filter((query) => ["inventory_receipt_versions", "inventory_receipt_corrections"].includes(query.table))
-      .every((query) => query.filters.some(([method, value]) => method === "limit" && value === 51))).toBe(true);
+    const auditQueries = queries.filter((query) => ["inventory_receipt_versions", "inventory_receipt_corrections"].includes(query.table));
+    expect(auditQueries).toHaveLength(2);
+    expect(auditQueries.every((query) => query.filters.some(([method, column, value]) =>
+      method === "in" && column === "receipt_id" && (value as string[]).includes(headers[0].id)))).toBe(true);
+    expect(auditQueries.every((query) => query.filters.some(([method, from, to]) => method === "range" && from === 0 && to === 499))).toBe(true);
     expect(parseInventoryHistoryCursor("2026-10-02T10:00:00.123456Z", "not-a-uuid")).toBeNull();
   });
 });

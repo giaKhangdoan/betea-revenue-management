@@ -5,6 +5,7 @@ import { allocateMonthlyAmountByDay, allocateSignedMonthlyAmountByDay, calculate
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
 import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 import { loadOwnerPostedProfitCostsInDateRange } from "@/lib/owner-advances/overview";
+import { readAllPages } from "@/lib/supabase/read-pages";
 
 export const dynamic = "force-dynamic";
 
@@ -80,7 +81,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const [recordsResult, costsResult, expensesResult, adjustmentsResult, monthTargetResult, weekTargetResult, ownerPostedCostsResult] = await Promise.all([
     loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: queryStart, end: queryEnd }),
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).gte("month_start", `${queryStart.slice(0, 7)}-01`).lte("month_start", `${queryEnd.slice(0, 7)}-01`),
-    owner.supabase.from("daily_expenses").select("business_date,amount_vnd").eq("owner_id", owner.ownerId).is("deleted_at", null).gte("business_date", invalidRange ? queryStart : start).lte("business_date", invalidRange ? queryEnd : end),
+    readAllPages((from, to) => owner.supabase.from("daily_expenses").select("business_date,amount_vnd")
+      .eq("owner_id", owner.ownerId).is("deleted_at", null)
+      .gte("business_date", invalidRange ? queryStart : start).lte("business_date", invalidRange ? queryEnd : end)
+      .order("business_date").order("id").range(from, to)),
     owner.supabase.from("monthly_cost_adjustments").select("month_start,amount_delta_vnd").eq("owner_id", owner.ownerId).gte("month_start", `${queryStart.slice(0, 7)}-01`).lte("month_start", `${queryEnd.slice(0, 7)}-01`),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", `${start.slice(0, 7)}-01`).maybeSingle(),
     owner.supabase.from("weekly_targets").select("revenue_target_vnd").eq("owner_id", owner.ownerId).eq("week_start", weekStart(validDate(params.date) ? params.date : today)).maybeSingle(),

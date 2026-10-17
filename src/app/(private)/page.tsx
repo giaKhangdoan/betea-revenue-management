@@ -5,6 +5,7 @@ import { allocateMonthlyAmountByDay, allocateSignedMonthlyAmountByDay, calculate
 import { addDays, currentBusinessDate, formatBusinessDate, formatVnd, monthEnd, weekStart } from "@/lib/finance/format";
 import { loadOwnerDailyRecords } from "@/lib/ledger/owner-daily-records";
 import { loadOwnerPostedProfitCostsInDateRange } from "@/lib/owner-advances/overview";
+import { readAllPages } from "@/lib/supabase/read-pages";
 
 export const dynamic = "force-dynamic";
 
@@ -51,16 +52,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const owner = await requireOwnerClient();
   if (!owner) redirect("/login");
 
+  const daysPromise = loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: effectiveStart, end: asOf });
+  const rangeIsInsideLoadedMonth = rangeStart >= effectiveStart && rangeEnd <= asOf;
+  const rangeDaysPromise = dateRangeInvalid
+    ? Promise.resolve({ data: [] as DayRow[], error: false })
+    : rangeIsInsideLoadedMonth
+      ? daysPromise
+      : loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: rangeStart, end: rangeEnd });
   const [daysResult, costResult, targetResult, expenseResult, adjustmentsResult, ownerPostedCostsResult, rangeDaysResult] = await Promise.all([
-    loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: effectiveStart, end: asOf }),
+    daysPromise,
     owner.supabase.from("monthly_costs").select("*").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
     owner.supabase.from("monthly_targets").select("revenue_target_vnd,profit_target_vnd").eq("owner_id", owner.ownerId).eq("month_start", start).maybeSingle(),
-    owner.supabase.from("daily_expenses").select("amount_vnd").eq("owner_id", owner.ownerId).is("deleted_at", null).gte("business_date", effectiveStart).lte("business_date", asOf),
+    readAllPages((from, to) => owner.supabase.from("daily_expenses").select("amount_vnd")
+      .eq("owner_id", owner.ownerId).is("deleted_at", null)
+      .gte("business_date", effectiveStart).lte("business_date", asOf)
+      .order("business_date").order("id").range(from, to)),
     owner.supabase.from("monthly_cost_adjustments").select("amount_delta_vnd").eq("owner_id", owner.ownerId).eq("month_start", start),
     loadOwnerPostedProfitCostsInDateRange(owner.supabase, owner.ownerId, start, asOf),
-    dateRangeInvalid
-      ? Promise.resolve({ data: [] as DayRow[], error: false })
-      : loadOwnerDailyRecords(owner.supabase, owner.ownerId, { start: rangeStart, end: rangeEnd }),
+    rangeDaysPromise,
   ]);
   const records = (daysResult.data ?? []) as DayRow[];
   const recordMap = new Map(records.map((record) => [record.business_date, record]));

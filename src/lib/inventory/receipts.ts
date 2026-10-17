@@ -1,4 +1,5 @@
 import type { createClient } from "@/lib/supabase/server";
+import { readAllPages, readGroupedPages } from "@/lib/supabase/read-pages";
 
 type ServerSupabaseClient = NonNullable<Awaited<ReturnType<typeof createClient>>>;
 
@@ -312,52 +313,69 @@ export async function getInventoryReceiptPage(
   const headers = rows.slice(0, limit);
   if (headers.length === 0) return { data: [], error: false, hasMore: false, nextCursor: null };
 
-  const lineResults = await Promise.all(headers.map((header) => supabase.from("inventory_receipt_lines")
-    .select("id,receipt_id,item_id,item_name,category,large_unit,large_quantity,conversion_factor,small_unit,loose_quantity,converted_quantity")
-    .eq("owner_id", ownerId).eq("receipt_id", header.id).order("line_number").limit(MAX_RECEIPT_LINES_PER_RECEIPT)));
-  if (lineResults.some(({ error }) => error)) return { data: [], error: true, hasMore: false, nextCursor: null };
-
-  const linesByReceipt = new Map<string, InventoryReceiptLine[]>();
-  for (const result of lineResults) {
-    for (const line of (result.data ?? []) as InventoryReceiptLine[]) {
-      const lines = linesByReceipt.get(line.receipt_id) ?? [];
-      lines.push(line);
-      linesByReceipt.set(line.receipt_id, lines);
-    }
-  }
+  const receiptIds = headers.map(({ id }) => id);
+  const lineRead = await readGroupedPages<InventoryReceiptLine>({
+    groupIds: receiptIds,
+    maxRowsPerGroup: MAX_RECEIPT_LINES_PER_RECEIPT,
+    getGroupId: (line) => line.receipt_id,
+    getRowId: (line) => line.id,
+    fetchPage: (ids, from, to) => supabase.from("inventory_receipt_lines")
+      .select("id,receipt_id,item_id,item_name,category,large_unit,large_quantity,conversion_factor,small_unit,loose_quantity,converted_quantity")
+      .eq("owner_id", ownerId).in("receipt_id", ids)
+      .order("receipt_id").order("line_number").order("id").range(from, to),
+  });
+  if (lineRead.error) return { data: [], error: true, hasMore: false, nextCursor: null };
+  const linesByReceipt = lineRead.rowsByGroup;
 
   const integrityByReceipt = new Map<string, InventoryReceiptHistoryIntegrity>();
+  let correctionsByReceipt = new Map<string, InventoryReceiptCorrection[]>();
+  const versionsByReceipt = new Map<string, InventoryReceiptHistoryVersion[]>();
+  let auditTruncatedReceiptIds = new Set<string>();
   if (options.includeHistory) {
-    const [integrityResult, ...auditResults] = await Promise.all([
+    type ReceiptVersionRow = {
+      receipt_id: string;
+      effective_at: string;
+      sequence_no: string | number;
+      event_type: string;
+      actor_id: string;
+      actor_label: string;
+      reason: string | null;
+      lines_snapshot: unknown;
+    };
+    const [integrityResult, correctionRead, versionRead] = await Promise.all([
       supabase.from("inventory_history_backfill_status").select("entity_id,status,reason")
-        .eq("owner_id", ownerId).eq("entity_type", "receipt").in("entity_id", headers.map(({ id }) => id)),
-      ...headers.map((header) => Promise.all([
-        supabase.from("inventory_receipt_corrections")
+        .eq("owner_id", ownerId).eq("entity_type", "receipt").in("entity_id", receiptIds),
+      readGroupedPages<InventoryReceiptCorrection>({
+        groupIds: receiptIds,
+        maxRowsPerGroup: MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT,
+        getGroupId: (correction) => correction.receipt_id,
+        getRowId: (correction) => correction.id,
+        fetchPage: (ids, from, to) => supabase.from("inventory_receipt_corrections")
           .select("id,receipt_id,corrected_at,corrected_by,corrected_by_label,reason,prior_lines")
-          .eq("owner_id", ownerId).eq("receipt_id", header.id)
-          .order("corrected_at", { ascending: false }).limit(MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT + 1),
-        supabase.from("inventory_receipt_versions")
+          .eq("owner_id", ownerId).in("receipt_id", ids)
+          .order("receipt_id").order("corrected_at", { ascending: false }).order("id", { ascending: false }).range(from, to),
+      }),
+      readGroupedPages<ReceiptVersionRow>({
+        groupIds: receiptIds,
+        maxRowsPerGroup: MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT,
+        getGroupId: (version) => version.receipt_id,
+        getRowId: (version) => String(version.sequence_no),
+        fetchPage: (ids, from, to) => supabase.from("inventory_receipt_versions")
           .select("receipt_id,effective_at,sequence_no,event_type,actor_id,actor_label,reason,lines_snapshot")
-          .eq("owner_id", ownerId).eq("receipt_id", header.id)
-          .order("effective_at", { ascending: false }).order("sequence_no", { ascending: false })
-          .limit(MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT + 1),
-      ])),
+          .eq("owner_id", ownerId).in("receipt_id", ids)
+          .order("receipt_id").order("effective_at", { ascending: false }).order("sequence_no", { ascending: false }).range(from, to),
+      }),
     ]);
-    if (integrityResult.error || auditResults.some((pair) => pair.some(({ error }) => error))) {
+    if (integrityResult.error || correctionRead.error || versionRead.error) {
       return { data: [], error: true, hasMore: false, nextCursor: null };
     }
     for (const row of integrityResult.data ?? []) integrityByReceipt.set(row.entity_id, {
       status: row.status === "verified" ? "verified" : "unverified", reason: row.reason,
     });
 
-    const resultById = new Map(headers.map((header, index) => [header.id, auditResults[index]]));
-    const receipts = headers.map((header) => {
-      const [correctionsData, versionsData] = resultById.get(header.id) ?? [
-        { data: [], error: null }, { data: [], error: null },
-      ];
-      const rawVersions = versionsData.data ?? [];
-      const rawCorrections = (correctionsData.data ?? []) as InventoryReceiptCorrection[];
-      const versions: InventoryReceiptHistoryVersion[] = rawVersions.slice(0, MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT).map((row) => ({
+    correctionsByReceipt = correctionRead.rowsByGroup;
+    for (const [receiptId, rows] of versionRead.rowsByGroup) {
+      versionsByReceipt.set(receiptId, rows.map((row) => ({
         effective_at: row.effective_at,
         sequence_no: row.sequence_no,
         event_type: row.event_type,
@@ -365,9 +383,14 @@ export async function getInventoryReceiptPage(
         actor_label: row.actor_label,
         reason: row.reason,
         lines: snapshotReceiptLines(row.lines_snapshot),
-      })).reverse();
-      const corrections = rawCorrections.slice(0, MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT)
+      })).reverse());
+    }
+    auditTruncatedReceiptIds = new Set([...correctionRead.truncatedGroupIds, ...versionRead.truncatedGroupIds]);
+
+    for (const [receiptId, receiptCorrections] of correctionsByReceipt) {
+      const corrections = receiptCorrections
         .sort((a, b) => Date.parse(a.corrected_at) - Date.parse(b.corrected_at));
+      const versions = versionsByReceipt.get(receiptId) ?? [];
       for (const correction of corrections) {
         const version = versions.find((entry) => entry.event_type === "receipt_corrected"
           && entry.effective_at === correction.corrected_at
@@ -378,19 +401,7 @@ export async function getInventoryReceiptPage(
           correction.after_lines = version.lines;
         }
       }
-      return {
-        ...header,
-        lines: linesByReceipt.get(header.id) ?? [],
-        corrections,
-        staff_editable: true,
-      history_truncated: rawCorrections.length > MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT
-        || rawVersions.length > MAX_RECEIPT_AUDIT_EVENTS_PER_RECEIPT,
-        ...(versions.length ? { versions } : {}),
-        ...(integrityByReceipt.has(header.id) ? { history_integrity: integrityByReceipt.get(header.id)! } : {}),
-      };
-    });
-    const last = headers.at(-1)!;
-    return { data: receipts, error: false, hasMore, nextCursor: hasMore ? { receivedAt: last.received_at, id: last.id } : null };
+    }
   }
 
   const last = headers.at(-1)!;
@@ -398,8 +409,13 @@ export async function getInventoryReceiptPage(
     data: headers.map((header) => ({
       ...header,
       lines: linesByReceipt.get(header.id) ?? [],
-      corrections: [],
+      corrections: correctionsByReceipt.get(header.id) ?? [],
       staff_editable: true,
+      ...(options.includeHistory ? {
+        history_truncated: auditTruncatedReceiptIds.has(header.id),
+        ...(versionsByReceipt.has(header.id) ? { versions: versionsByReceipt.get(header.id)! } : {}),
+        ...(integrityByReceipt.has(header.id) ? { history_integrity: integrityByReceipt.get(header.id)! } : {}),
+      } : {}),
     })),
     error: false,
     hasMore,
@@ -415,51 +431,51 @@ export async function getLatestInventoryReceiptsForItems(
 ): Promise<{ data: InventoryLatestItemReceipt[]; error: boolean }> {
   const requestedIds = [...new Set(itemIds)];
   if (requestedIds.length === 0) return { data: [], error: false };
+  const latestByItem = new Map<string, InventoryLatestItemReceipt>();
+  const receiptPageSize = 100;
 
-  const { data: rawLines, error: linesError } = await supabase.from("inventory_receipt_lines")
-    .select("id,receipt_id,item_id,item_name,category,large_unit,large_quantity,conversion_factor,small_unit,loose_quantity,converted_quantity")
-    .eq("owner_id", ownerId)
-    .in("item_id", requestedIds)
-    .order("receipt_id")
-    .order("line_number")
-    .limit(5001);
-  if (linesError || (rawLines?.length ?? 0) > 5000) return { data: [], error: true };
-
-  const lines = (rawLines ?? []) as InventoryReceiptLine[];
-  const receiptIds = [...new Set(lines.map(({ receipt_id }) => receipt_id))];
-  if (receiptIds.length === 0) return { data: [], error: false };
-
-  const headers: { id: string; receipt_code: string; received_at: string }[] = [];
-  for (let from = 0; from < receiptIds.length; from += 500) {
-    const { data, error } = await supabase.from("inventory_receipts")
+  // Walk the newest receipt headers first and only read lines for items that have
+  // not yet been found. This bounds the common case to one small page and avoids
+  // scanning every historical line (or failing at an arbitrary 5,000-row cap).
+  for (let from = 0; ; from += receiptPageSize) {
+    const { data: headers, error: headerError } = await supabase.from("inventory_receipts")
       .select("id,receipt_code,received_at")
       .eq("owner_id", ownerId)
-      .in("id", receiptIds.slice(from, from + 500));
-    if (error) return { data: [], error: true };
-    headers.push(...(data ?? []));
-  }
+      .order("received_at", { ascending: false }).order("id", { ascending: false })
+      .range(from, from + receiptPageSize - 1);
+    if (headerError) return { data: [], error: true };
+    if (!headers?.length) break;
 
-  const linesByReceipt = new Map<string, InventoryReceiptLine[]>();
-  for (const line of lines) {
-    const receiptLines = linesByReceipt.get(line.receipt_id) ?? [];
-    receiptLines.push(line);
-    linesByReceipt.set(line.receipt_id, receiptLines);
-  }
+    const pendingIds = requestedIds.filter((id) => !latestByItem.has(id));
+    if (pendingIds.length === 0) break;
+    const receiptIds = headers.map(({ id }) => id);
+    const lineRead = await readAllPages((lineFrom, lineTo) => supabase.from("inventory_receipt_lines")
+      .select("id,receipt_id,item_id,item_name,category,large_unit,large_quantity,conversion_factor,small_unit,loose_quantity,converted_quantity")
+      .eq("owner_id", ownerId).in("receipt_id", receiptIds).in("item_id", pendingIds)
+      .order("receipt_id").order("item_id").order("line_number").order("id").range(lineFrom, lineTo));
+    if (lineRead.error) return { data: [], error: true };
 
-  const latestByItem = new Map<string, InventoryLatestItemReceipt>();
-  headers.sort((a, b) => b.received_at.localeCompare(a.received_at) || b.id.localeCompare(a.id));
-  for (const header of headers) {
-    const receiptLines = linesByReceipt.get(header.id) ?? [];
-    const itemIdsInReceipt = new Set(receiptLines.map(({ item_id }) => item_id));
-    for (const itemId of itemIdsInReceipt) {
-      if (latestByItem.has(itemId)) continue;
-      latestByItem.set(itemId, {
-        item_id: itemId,
-        receipt_code: header.receipt_code,
-        received_at: header.received_at,
-        lines: receiptLines.filter((line) => line.item_id === itemId),
-      });
+    const linesByReceiptAndItem = new Map<string, Map<string, InventoryReceiptLine[]>>();
+    for (const line of lineRead.data as InventoryReceiptLine[]) {
+      const items = linesByReceiptAndItem.get(line.receipt_id) ?? new Map<string, InventoryReceiptLine[]>();
+      const lines = items.get(line.item_id) ?? [];
+      lines.push(line);
+      items.set(line.item_id, lines);
+      linesByReceiptAndItem.set(line.receipt_id, items);
     }
+    for (const header of headers) {
+      for (const [itemId, lines] of linesByReceiptAndItem.get(header.id) ?? []) {
+        if (latestByItem.has(itemId)) continue;
+        latestByItem.set(itemId, {
+          item_id: itemId,
+          receipt_code: header.receipt_code,
+          received_at: header.received_at,
+          lines,
+        });
+      }
+    }
+
+    if (headers.length < receiptPageSize) break;
   }
 
   return { data: [...latestByItem.values()], error: false };
